@@ -1,7 +1,7 @@
 /* Service worker: permite instalar la app y usarla sin internet.
    - La app, el mapa de territorios y la librería del mapa se guardan al instalar.
    - Las calles del fondo (OpenStreetMap) se guardan cada vez que se ven con internet. */
-const CACHE = 'rio-v2';
+const CACHE = 'rio-v3';
 const CACHE_MAPA = 'rio-mapa-v1';
 const MAX_TILES = 3000;
 const SHELL = ['./', 'index.html', 'ancianos.html', 'styles.css', 'config.js', 'core.js', 'mapa.js', 'publicadores.js', 'ancianos.js',

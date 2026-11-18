@@ -290,6 +290,10 @@ function vTerritorios() {
     <label class="f"><span>Nota (opcional)</span><textarea name="nota" maxlength="500" style="min-height:60px" placeholder="Ej. Llevar tratados de la campaña"></textarea></label>
     <button class="btn btn-primary btn-block" id="bSal">Programar salida</button>
   </form>
+  ${(DATA.puntos || []).length ? `<div class="h-sec">Puntos de predicación activos</div><div class="lista" style="margin-bottom:8px">${DATA.puntos.map(pt => `<div class="item">
+      <div class="grow"><div class="t">${esc(pt.nombre)}</div><div class="small muted">${pt.territorio ? 'Territorio ' + esc(pt.territorio) + ' · ' : ''}${esc(haceCuanto(pt.actualizado))}${pt.nota ? ' · ' + esc(pt.nota) : ''}</div></div>
+      <button class="x" aria-label="Quitar punto" onclick="borrarPunto('${esc(pt.id)}')">✕</button></div>`).join('')}</div>
+    <p class="small muted">Los publicadores marcan estos puntos desde su app; desaparecen solos después de 8 horas.</p>` : ''}
   <div class="h-sec">Salidas programadas</div>
   ${sal.length ? `<div class="lista">${sal.map(x => `<div class="item">
       <div class="grow"><div class="t">Territorio ${esc(x.territorio)} · <span class="cap" style="display:inline-block">${esc(fmtFecha(x.fecha))}</span>${x.hora ? ' · ' + esc(x.hora) : ''}</div>
@@ -329,6 +333,10 @@ async function guardarSalida(e) {
 async function borrarSalida(id) {
   if (!await confirmar('¿Eliminar esta salida programada?')) return;
   try { await post('borrarSalida', { id }); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
+}
+async function borrarPunto(id) {
+  if (!await confirmar('¿Quitar este punto del mapa para todos?', 'Quitar')) return;
+  try { await post('borrarPunto', { id }); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
 }
 function compartirSalidaAdmin(id) {
   const x = (DATA.salidas || []).find(s => s.id === id); if (!x) return;

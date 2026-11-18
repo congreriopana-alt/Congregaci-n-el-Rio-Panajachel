@@ -63,6 +63,7 @@ const Mapa = (() => {
         capas[n] = layer;
         layer.bindTooltip(String(n), { permanent: true, direction: 'center', className: 'tlabel' });
         layer.on('click', e => {
+          if (opts.onClic && opts.onClic(e.latlng)) { L.DomEvent.stopPropagation(e); return; }
           if (opts.onMapa) { opts.onMapa(e.latlng); L.DomEvent.stopPropagation(e); return; }
           if (opts.onTerritorio) opts.onTerritorio(n);
         });
@@ -70,6 +71,39 @@ const Mapa = (() => {
     }).addTo(map);
     map.fitBounds(grupo.getBounds(), { padding: [12, 12] });
     if (opts.onMapa) map.on('click', e => opts.onMapa(e.latlng));
+    if (opts.onClic) map.on('click', e => opts.onClic(e.latlng));
+    if (opts.onArrastre) map.on('dragstart', opts.onArrastre);
+
+    /* Puntos donde están predicando */
+    const capaPuntos = L.layerGroup().addTo(map);
+    function ponerPuntos(lista, mios = [], onClick) {
+      capaPuntos.clearLayers();
+      lista.forEach(pt => {
+        const mio = mios.includes(pt.id);
+        L.marker([pt.lat, pt.lng], {
+          icon: L.divIcon({ className: 'pin-pred' + (mio ? ' mio' : ''), html: '<span></span><i></i>', iconSize: [30, 30], iconAnchor: [15, 30] }),
+          zIndexOffset: 1000
+        }).addTo(capaPuntos)
+          .bindTooltip(esc(pt.nombre), { permanent: true, direction: 'top', offset: [0, -28], className: 'plabel' })
+          .on('click', () => onClick && onClick(pt));
+      });
+    }
+
+    /* Ruta */
+    let capaRuta = null, destinoMk = null;
+    function mostrarRuta(coords, recta, ajustar) {
+      if (capaRuta) capaRuta.remove();
+      capaRuta = L.layerGroup([
+        L.polyline(coords, { color: '#fff', weight: 9, opacity: .9 }),
+        L.polyline(coords, { color: '#1a73e8', weight: 5, opacity: .95, dashArray: recta ? '8 10' : null })
+      ]).addTo(map);
+      if (ajustar) map.fitBounds(L.latLngBounds(coords), { padding: [40, 40], maxZoom: 18 });
+    }
+    function marcarDestino(lat, lng) {
+      if (destinoMk) destinoMk.remove();
+      destinoMk = lat == null ? null : L.circleMarker([lat, lng], { radius: 11, color: '#1a73e8', weight: 3, fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+    }
+    function limpiarRuta() { if (capaRuta) capaRuta.remove(); capaRuta = null; marcarDestino(null); }
 
     function seleccionar(n, acercar = true) {
       if (seleccionado != null && capas[seleccionado]) capas[seleccionado].setStyle(estilo(seleccionado, false));
@@ -116,7 +150,68 @@ const Mapa = (() => {
     }
 
     setTimeout(() => map.invalidateSize(), 60);
-    return { map, seleccionar, verTodos, marcarPunto, seguirme, detener, destruir() { detener(); map.remove(); } };
+    return { map, seleccionar, verTodos, marcarPunto, seguirme, detener, ponerPuntos, mostrarRuta, marcarDestino, limpiarRuta,
+      centrarEn(lat, lng, z) { map.setView([lat, lng], z || Math.max(map.getZoom(), 17)); },
+      destruir() { detener(); map.remove(); } };
+  }
+
+  /* Geometría */
+  const R = 6371000, rad = d => d * Math.PI / 180;
+  function distancia(a, b) {
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function rumbo(a, b) {
+    const y = Math.sin(rad(b.lng - a.lng)) * Math.cos(rad(b.lat));
+    const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(rad(b.lng - a.lng));
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+  const rumboTexto = g => ['norte', 'noreste', 'este', 'sureste', 'sur', 'suroeste', 'oeste', 'noroeste'][Math.round(g / 45) % 8];
+  const fmtDist = m => m < 1000 ? `${Math.max(5, Math.round(m / 5) * 5)} m` : `${(m / 1000).toFixed(1)} km`;
+  const fmtTiempo = s => { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+  /* Distancia de un punto a una línea (en metros, aproximada) y el índice del tramo más cercano */
+  function cercaniaLinea(p, coords) {
+    const kx = Math.cos(rad(p.lat)) * 111320, ky = 110540;
+    let mejor = Infinity, idx = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const ax = (coords[i][1] - p.lng) * kx, ay = (coords[i][0] - p.lat) * ky;
+      const bx = (coords[i + 1][1] - p.lng) * kx, by = (coords[i + 1][0] - p.lat) * ky;
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+      const d = Math.hypot(ax + t * dx, ay + t * dy);
+      if (d < mejor) { mejor = d; idx = i; }
+    }
+    return { dist: mejor, idx };
+  }
+
+  /* Calcular ruta (necesita internet). modo: 'foot' a pie, 'car' en carro */
+  const MOD = { left: 'a la izquierda', right: 'a la derecha', 'slight left': 'levemente a la izquierda', 'slight right': 'levemente a la derecha',
+    'sharp left': 'bien a la izquierda', 'sharp right': 'bien a la derecha', straight: 'recto', uturn: 'y regrese' };
+  function instruccion(st) {
+    const m = st.maneuver || {}, mod = MOD[m.modifier] || '', calle = st.name ? ` por ${st.name}` : '';
+    switch (m.type) {
+      case 'depart': return `Salga${calle}`;
+      case 'arrive': return 'Llegará a su destino';
+      case 'roundabout': case 'rotary': return `En la rotonda, tome la salida ${m.exit || ''}${calle}`.replace('  ', ' ');
+      case 'continue': case 'new name': return m.modifier && m.modifier !== 'straight' ? `Siga ${mod}${calle}` : `Siga recto${calle}`;
+      case 'merge': case 'on ramp': case 'off ramp': case 'fork': return `Manténgase ${mod || 'recto'}${calle}`;
+      default: return m.modifier === 'straight' ? `Siga recto${calle}` : `Gire ${mod}${calle}`;
+    }
+  }
+  async function calcularRuta(origen, destino, modo = 'foot') {
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 12000);
+    try {
+      const url = `https://routing.openstreetmap.de/routed-${modo}/route/v1/driving/${origen.lng.toFixed(6)},${origen.lat.toFixed(6)};${(+destino.lng).toFixed(6)},${(+destino.lat).toFixed(6)}?overview=full&geometries=geojson&steps=true`;
+      const r = await fetch(url, { signal: ctl.signal });
+      const j = await r.json();
+      if (j.code !== 'Ok' || !j.routes || !j.routes.length) throw new Error('sin ruta');
+      const rt = j.routes[0];
+      return {
+        coords: rt.geometry.coordinates.map(([x, y]) => [y, x]), distancia: rt.distance, duracion: rt.duration, recta: false,
+        pasos: rt.legs[0].steps.map(st => ({ texto: instruccion(st), lat: st.maneuver.location[1], lng: st.maneuver.location[0] }))
+      };
+    } finally { clearTimeout(to); }
   }
 
   /* Enlaces y mensajes */
@@ -124,7 +219,8 @@ const Mapa = (() => {
   const enlaceRuta = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${(+lat).toFixed(6)},${(+lng).toFixed(6)}`;
   const enlaceApp = n => `${location.origin}${location.pathname.replace(/ancianos\.html$/, '')}#territorio-${n}`;
 
-  return { territorios, numeros, buscar, territorioDe, centro, crear, enlaceMapa, enlaceRuta, enlaceApp };
+  return { territorios, numeros, buscar, territorioDe, centro, crear, enlaceMapa, enlaceRuta, enlaceApp,
+    distancia, rumbo, rumboTexto, fmtDist, fmtTiempo, cercaniaLinea, calcularRuta };
 })();
 
 /* Hoja para compartir un texto: WhatsApp, SMS (sirve sin internet), compartir o copiar */

@@ -200,3 +200,21 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .salida { border-left: 4px solid var(--ok); }
 .compartir-txt { background: #f6f3ee; border-radius: 10px; padding: 10px 12px; max-height: 180px; overflow: auto; }
 .leaflet-container { font: inherit; }
+.pin-pred span { position: absolute; left: 3px; top: 0; width: 24px; height: 24px; border-radius: 50% 50% 50% 0; background: #1f8f4e; transform: rotate(-45deg); border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.pin-pred.mio span { background: #c9a227; }
+.pin-pred i { position: absolute; left: 3px; top: 0; width: 24px; height: 24px; border-radius: 50%; animation: pulso 2s infinite; }
+@keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(31,143,78,.55); } 100% { box-shadow: 0 0 0 18px rgba(31,143,78,0); } }
+.plabel { background: #1f8f4e; color: #fff; border: 0; border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 11.5px; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.plabel::before { display: none; }
+.nav { background: #1a73e8; color: #fff; border-radius: var(--radius); padding: 14px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.nav .grande { font-size: 1.25rem; font-weight: 750; line-height: 1.25; margin: 4px 0; }
+.nav .peq { font-size: .85rem; color: #d7e6fd; }
+.nav .btn { min-height: 36px; padding: 6px 12px; font-size: .85rem; }
+.nav .btn-w { background: #fff; color: #1a73e8; border-color: #fff; }
+.nav .btn-t { background: transparent; color: #fff; border-color: rgba(255,255,255,.55); }
+.nav .btn-t.on { background: rgba(255,255,255,.25); }
+.nav.llego { background: var(--ok); }
+.punto-card { border-left: 4px solid #1f8f4e; }
+.btn-verde { background: #1f8f4e; border-color: #1f8f4e; color: #fff; }
+#navPanel, #tMapa, #tPuntos { scroll-margin-top: 84px; }
+.grid2 > .btn { min-height: 52px; line-height: 1.2; }

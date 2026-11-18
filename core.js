@@ -84,6 +84,13 @@ const API = {
     if (!j.ok) throw new Error(j.error || 'Error del servidor');
     return j.data;
   },
+  async puntos() {
+    if (DEMO) return Demo.handle('puntos', {});
+    const r = await fetch(CFG.API_URL + '?action=puntos&t=' + Date.now(), { cache: 'no-store' });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Error del servidor');
+    return j.data;
+  },
   async post(action, payload = {}) {
     if (DEMO) return Demo.handle(action, payload);
     const r = await fetch(CFG.API_URL, {
@@ -96,6 +103,21 @@ const API = {
     return j.data;
   }
 };
+
+/* Identificador de este teléfono (para poder mover o quitar su propio punto) */
+function miDispositivo() {
+  let d = store.get('dispositivo', '');
+  if (!d) { d = uid() + uid(); store.set('dispositivo', d); }
+  return d;
+}
+function haceCuanto(iso) {
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (!isFinite(m)) return '';
+  if (m < 1) return 'ahora mismo';
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.floor(m / 60);
+  return `hace ${h} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`;
+}
 
 /* ---------- Modo demostración (sin Google) ---------- */
 const Demo = (() => {
@@ -111,6 +133,8 @@ const Demo = (() => {
   const espera = (ms = 250) => new Promise(r => setTimeout(r, ms));
   const semanaDe = off => semana(off);
 
+  const puntosActivos = () => (st.puntos ||= []).filter(x => x.expira > new Date().toISOString())
+    .map(({ dispositivo, ...x }) => x).sort((a, b) => b.actualizado.localeCompare(a.actualizado));
   async function handle(action, p) {
     await espera(action === 'subir' ? 700 : 200);
     const h = hoy();
@@ -121,12 +145,23 @@ const Demo = (() => {
         anuncios: st.anuncios.filter(a => !a.fecha || a.fecha >= addDias(h, -3)).sort((a, b) => (a.fecha || '9999').localeCompare(b.fecha || '9999')),
         asignaciones: st.asignaciones.filter(a => a.fecha >= addDias(h, -7)).sort((a, b) => a.fecha.localeCompare(b.fecha)),
         ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre),
+        puntos: puntosActivos(),
         salidas: (st.salidas ||= []).filter(x => x.fecha >= addDias(h, -1)).sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
       }));
       case 'enviarPregunta': {
         const o = { id: uid(), fecha: new Date().toISOString(), nombre: p.nombre || '', anciano: p.anciano || '', pregunta: p.pregunta, respuesta: '', estado: 'pendiente' };
         st.preguntas.push(o); guardar(); return { id: o.id };
       }
+      case 'puntos': return puntosActivos();
+      case 'marcarPunto': {
+        st.puntos ||= [];
+        const ahora = new Date();
+        const datos = { nombre: p.nombre, nota: p.nota || '', lat: +p.lat, lng: +p.lng, territorio: p.territorio || '', actualizado: ahora.toISOString(), expira: new Date(+ahora + 8 * 3600e3).toISOString() };
+        let x = st.puntos.find(q => q.dispositivo === p.dispositivo);
+        if (x) Object.assign(x, datos); else st.puntos.push(x = { id: uid(), dispositivo: p.dispositivo, ...datos });
+        guardar(); return { id: x.id };
+      }
+      case 'quitarPunto': st.puntos = (st.puntos || []).filter(q => !(q.id === p.id && q.dispositivo === p.dispositivo)); guardar(); return true;
       case 'misPreguntas': return st.preguntas.filter(x => (p.ids || []).includes(x.id));
     }
     admin(p);
@@ -145,6 +180,7 @@ const Demo = (() => {
         const o = { id: p.id || uid(), fecha: p.fecha, hora: p.hora || '', territorio: String(p.territorio), conductor: p.conductor || '', punto: p.punto || '', lat: p.lat || '', lng: p.lng || '', nota: p.nota || '' };
         st.salidas = (st.salidas || []).filter(x => x.id !== o.id); st.salidas.push(o); guardar(); return o;
       }
+      case 'borrarPunto': st.puntos = (st.puntos || []).filter(q => q.id !== p.id); guardar(); return true;
       case 'borrarSalida': st.salidas = (st.salidas || []).filter(x => x.id !== p.id); guardar(); return true;
       case 'borrarAnuncio': st.anuncios = st.anuncios.filter(x => x.id !== p.id); guardar(); return true;
       case 'listarAsignaciones': return st.asignaciones.filter(a => a.fecha >= addDias(h, -30)).sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -289,6 +325,8 @@ const ICON = {
   bell: '<svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>',
   chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg>',
   map: '<svg viewBox="0 0 24 24"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5zM9 4v13.5M15 6.5V20"/></svg>',
+  pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
+  ruta: '<svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></svg>',
   gps: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>',
   wa: '<svg viewBox="0 0 24 24"><path d="M20 11.6a8.1 8.1 0 0 1-12 7.1L4 20l1.3-3.9A8.1 8.1 0 1 1 20 11.6z"/><path d="M9 8.5c.2 2.6 2.6 5.3 5.6 5.9l1-1.2-1.6-.9-.8.8c-1-.4-2.1-1.4-2.6-2.5l.8-.8-.8-1.6z"/></svg>'
 };
