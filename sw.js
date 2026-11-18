@@ -1,23 +1,55 @@
-/* Service worker: permite instalar la app y abrirla sin conexión */
-const CACHE = 'rio-v1';
-const SHELL = ['./', 'index.html', 'ancianos.html', 'styles.css', 'config.js', 'core.js', 'publicadores.js', 'ancianos.js',
+/* Service worker: permite instalar la app y usarla sin internet.
+   - La app, el mapa de territorios y la librería del mapa se guardan al instalar.
+   - Las calles del fondo (OpenStreetMap) se guardan cada vez que se ven con internet. */
+const CACHE = 'rio-v2';
+const CACHE_MAPA = 'rio-mapa-v1';
+const MAX_TILES = 3000;
+const SHELL = ['./', 'index.html', 'ancianos.html', 'styles.css', 'config.js', 'core.js', 'mapa.js', 'publicadores.js', 'ancianos.js',
+  'territorios.geojson', 'lib/leaflet.js', 'lib/leaflet.css',
   'manifest.json', 'manifest-ancianos.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/admin-192.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {}));
   self.skipWaiting();
 });
+
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys()
+    .then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== CACHE_MAPA).map(k => caches.delete(k))))
+    .then(() => self.clients.claim()));
 });
-// Primero la red (para ver siempre lo más nuevo); si no hay internet, lo guardado.
+
+async function recortarMapa() {
+  const c = await caches.open(CACHE_MAPA);
+  const ks = await c.keys();
+  for (let i = 0; i < ks.length - MAX_TILES; i++) await c.delete(ks[i]);
+}
+
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+
+  // Calles del mapa: primero lo guardado, si no hay, internet (y se guarda).
+  if (url.hostname === 'tile.openstreetmap.org') {
+    e.respondWith(caches.open(CACHE_MAPA).then(async c => {
+      const hit = await c.match(req);
+      if (hit) return hit;
+      try {
+        const r = await fetch(req);
+        if (r.ok) { c.put(req, r.clone()); recortarMapa(); }
+        return r;
+      } catch (err) { return new Response('', { status: 504 }); }
+    }));
+    return;
+  }
+
+  if (url.origin !== self.location.origin) return;
+  // Archivos de la app: primero internet (lo más nuevo); sin internet, lo guardado.
   e.respondWith(
-    fetch(e.request).then(r => {
-      if (r.ok) { const copia = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copia)); }
+    fetch(req).then(r => {
+      if (r.ok) { const copia = r.clone(); caches.open(CACHE).then(c => c.put(req, copia)); }
       return r;
-    }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
+    }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
   );
 });

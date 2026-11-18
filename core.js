@@ -99,39 +99,11 @@ const API = {
 
 /* ---------- Modo demostración (sin Google) ---------- */
 const Demo = (() => {
-  const KEY = 'demo_v3';
+  const KEY = 'demo_v4';
+  // Sin datos de ejemplo: todo lo sube el cuerpo de ancianos.
   const semilla = () => ({
-    password: 'rio2026',
-    publicaciones: [
-      { id: 'p1', seccion: 'discursos', titulo: 'Discursos públicos — noviembre 2026', fechaInicio: '2026-11-01', fechaFin: '2026-11-30', nota: 'Programa del mes con presidente, lector y hospitalidad.', url: 'demo/discursos-noviembre.png', mimeType: 'image/png', creado: '2026-10-28T12:00:00Z' },
-      { id: 'p2', seccion: 'entresemana', titulo: 'Reunión de entre semana — Jeremías 49, 50', fechaInicio: '2026-11-02', fechaFin: '2026-11-08', nota: '', url: 'demo/entresemana-5nov.png', mimeType: 'image/png', creado: '2026-10-30T12:00:00Z' }
-    ],
-    anuncios: [
-      { id: 'a1', tipo: 'anuncio', titulo: 'Limpieza general del Salón del Reino (ejemplo)', texto: 'Se invita a todos los que puedan apoyar.\nTraer guantes y escoba si es posible.', fecha: '2026-11-28', hora: '7:00 a. m.', creado: '2026-11-15T12:00:00Z' },
-      { id: 'a2', tipo: 'superintendente', titulo: 'Visita del superintendente de circuito (ejemplo)', texto: 'Este es un anuncio de ejemplo. Los ancianos pueden escribir aquí el programa de la semana de la visita.', fecha: '2026-12-08', hora: '', creado: '2026-11-10T12:00:00Z' }
-    ],
-    asignaciones: [
-      ['2026-11-19', 'entresemana', 'Presidente', 'Nelson Flores'],
-      ['2026-11-21', 'discursos', 'Presidente', 'Florencio Gómez'],
-      ['2026-11-21', 'discursos', 'Lector de La Atalaya', 'Enrique Cáceres'],
-      ['2026-11-21', 'discursos', 'Discursante saliente', 'Nelson Flores'],
-      ['2026-11-21', 'audio_video', 'Audio', 'Saul Caro'],
-      ['2026-11-21', 'acomodadores', 'Acomodador de entrada', 'Mateo Queche'],
-      ['2026-11-28', 'discursos', 'Presidente', 'Edgar Cobar'],
-      ['2026-11-28', 'discursos', 'Lector de La Atalaya', 'Mateo Queche'],
-      ['2026-11-28', 'discursos', 'Discursante saliente', 'Luis Yax'],
-      ['2026-11-28', 'limpieza', 'Limpieza general', 'Grupo 6']
-    ].map(([fecha, seccion, asignacion, hermano], i) => ({ id: 's' + i, fecha, seccion, asignacion, hermano })),
-    hermanos: [
-      { nombre: 'Nelson Flores', telefono: '', email: '' },
-      { nombre: 'Florencio Gómez', telefono: '', email: '' },
-      { nombre: 'Enrique Cáceres', telefono: '', email: '' },
-      { nombre: 'Mateo Queche', telefono: '', email: '' },
-      { nombre: 'Edgar Cobar', telefono: '', email: '' },
-      { nombre: 'Saul Caro', telefono: '', email: '' }
-    ],
-    ancianos: [],
-    preguntas: []
+    password: 'rio2026', publicaciones: [], anuncios: [], asignaciones: [],
+    hermanos: [], ancianos: [], preguntas: [], salidas: []
   });
   let st = store.get(KEY, null) || semilla();
   const guardar = () => { if (!store.set(KEY, st)) console.warn('Demo: no se pudo guardar (archivo grande); queda solo en esta sesión.'); };
@@ -148,7 +120,8 @@ const Demo = (() => {
         publicaciones: [...st.publicaciones].sort((a, b) => (b.fechaInicio || '').localeCompare(a.fechaInicio || '') || (b.creado || '').localeCompare(a.creado || '')),
         anuncios: st.anuncios.filter(a => !a.fecha || a.fecha >= addDias(h, -3)).sort((a, b) => (a.fecha || '9999').localeCompare(b.fecha || '9999')),
         asignaciones: st.asignaciones.filter(a => a.fecha >= addDias(h, -7)).sort((a, b) => a.fecha.localeCompare(b.fecha)),
-        ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre)
+        ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre),
+        salidas: (st.salidas ||= []).filter(x => x.fecha >= addDias(h, -1)).sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
       }));
       case 'enviarPregunta': {
         const o = { id: uid(), fecha: new Date().toISOString(), nombre: p.nombre || '', anciano: p.anciano || '', pregunta: p.pregunta, respuesta: '', estado: 'pendiente' };
@@ -168,6 +141,11 @@ const Demo = (() => {
         const o = { id: uid(), tipo: p.tipo, titulo: p.titulo, texto: p.texto || '', fecha: p.fecha || '', hora: p.hora || '', mimeType: p.mimeType || '', url: p.base64 ? `data:${p.mimeType};base64,${p.base64}` : '', creado: new Date().toISOString() };
         st.anuncios.push(o); guardar(); return o;
       }
+      case 'guardarSalida': {
+        const o = { id: p.id || uid(), fecha: p.fecha, hora: p.hora || '', territorio: String(p.territorio), conductor: p.conductor || '', punto: p.punto || '', lat: p.lat || '', lng: p.lng || '', nota: p.nota || '' };
+        st.salidas = (st.salidas || []).filter(x => x.id !== o.id); st.salidas.push(o); guardar(); return o;
+      }
+      case 'borrarSalida': st.salidas = (st.salidas || []).filter(x => x.id !== p.id); guardar(); return true;
       case 'borrarAnuncio': st.anuncios = st.anuncios.filter(x => x.id !== p.id); guardar(); return true;
       case 'listarAsignaciones': return st.asignaciones.filter(a => a.fecha >= addDias(h, -30)).sort((a, b) => a.fecha.localeCompare(b.fecha));
       case 'agregarAsignaciones': {
@@ -197,6 +175,11 @@ const Demo = (() => {
           const k = norm(a.hermano);
           const her = st.hermanos.find(x => norm(x.nombre) === k) || {};
           (mapa[k] ||= { hermano: a.hermano, telefono: her.telefono || '', email: her.email || '', items: [] }).items.push(a);
+        });
+        (st.salidas || []).filter(x => x.conductor && x.fecha >= s.inicio && x.fecha <= s.fin).forEach(x => {
+          const k = norm(x.conductor);
+          const her = st.hermanos.find(y => norm(y.nombre) === k) || {};
+          (mapa[k] ||= { hermano: x.conductor, telefono: her.telefono || '', email: her.email || '', items: [] }).items.push({ fecha: x.fecha, asignacion: `Conductor de la salida · Territorio ${x.territorio}${x.hora ? ' · ' + x.hora : ''}`, seccion: 'predicacion' });
         });
         const lista = Object.values(mapa).sort((a, b) => a.hermano.localeCompare(b.hermano));
         lista.forEach(g => g.items.sort((a, b) => a.fecha.localeCompare(b.fecha)));
@@ -305,6 +288,8 @@ const ICON = {
   list: '<svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>',
   chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg>',
+  map: '<svg viewBox="0 0 24 24"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5zM9 4v13.5M15 6.5V20"/></svg>',
+  gps: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>',
   wa: '<svg viewBox="0 0 24 24"><path d="M20 11.6a8.1 8.1 0 0 1-12 7.1L4 20l1.3-3.9A8.1 8.1 0 1 1 20 11.6z"/><path d="M9 8.5c.2 2.6 2.6 5.3 5.6 5.9l1-1.2-1.6-.9-.8.8c-1-.4-2.1-1.4-2.6-2.5l.8-.8-.8-1.6z"/></svg>'
 };
 

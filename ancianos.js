@@ -5,7 +5,7 @@ let vista = sesion.get('vista', 'subir');
 let recSemana = 0, filtroAsig = '';
 const VISTAS = [
   ['subir', 'Subir programa'], ['publicado', 'Publicado'], ['anuncios', 'Anuncios'],
-  ['asignaciones', 'Asignaciones'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos']
+  ['asignaciones', 'Asignaciones'], ['territorios', 'Territorios'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos']
 ];
 if (DEMO) $('#demoBanner').hidden = false;
 if (CFG.CONGREGACION) $('#subBrand').textContent = CFG.CONGREGACION;
@@ -65,6 +65,7 @@ async function recargarData() { DATA = await API.get(); }
 async function render() {
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === vista));
   const app = $('#app');
+  if (AM) { AM.destruir(); AM = null; }
   try {
     if (vista === 'subir') app.innerHTML = vSubir(), initSubir();
     else if (vista === 'publicado') app.innerHTML = vPublicado();
@@ -72,6 +73,7 @@ async function render() {
     else if (vista === 'asignaciones') { if (!ASIG) { app.innerHTML = '<div class="skeleton"></div>'; ASIG = await post('listarAsignaciones'); HER ||= await post('listarHermanos'); } app.innerHTML = vAsignaciones(); }
     else if (vista === 'hermanos') { if (!HER) { app.innerHTML = '<div class="skeleton"></div>'; HER = await post('listarHermanos'); } app.innerHTML = vHermanos(); }
     else if (vista === 'preguntas') app.innerHTML = vPreguntas();
+    else if (vista === 'territorios') { app.innerHTML = '<div class="skeleton"></div>'; await Mapa.territorios(); HER ||= await post('listarHermanos'); app.innerHTML = vTerritorios(); initTerritorios(); }
     else if (vista === 'recordatorios') { app.innerHTML = '<div class="skeleton"></div>'; REC = await post('recordatorios', { semana: recSemana }); app.innerHTML = vRecordatorios(); }
   } catch (e) { app.innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`; }
 }
@@ -266,6 +268,74 @@ async function agregarBulk() {
 }
 async function borrarAsig(id) {
   try { await post('borrarAsignacion', { id }); ASIG = ASIG.filter(a => a.id !== id); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------- Territorios: el encargado programa las salidas ---------- */
+let AM = null, PUNTO = null;
+function vTerritorios() {
+  const sal = (DATA.salidas || []).filter(x => x.fecha >= hoy());
+  const nums = Mapa.numeros();
+  return `<h1 class="titulo-vista">Territorios</h1>
+  <p class="small muted" style="margin-top:-6px">Programe qué territorio se predicará. Los publicadores lo verán en el mapa y el conductor recibirá su recordatorio.</p>
+  <form class="card" id="fSal" onsubmit="guardarSalida(event)">
+    <div class="grid2"><label class="f"><span>Fecha</span><input type="date" name="fecha" required value="${esc(hoy())}"></label>
+      <label class="f"><span>Hora</span><input type="text" name="hora" maxlength="20" placeholder="Ej. 9:00 a. m."></label></div>
+    <div class="grid2 resp"><label class="f"><span>Territorio</span><select name="territorio" id="sTerr">${nums.map(n => `<option value="${esc(n)}">Territorio ${esc(n)}</option>`).join('')}</select></label>
+      <label class="f"><span>Conductor</span><input type="text" name="conductor" list="dlHerT" maxlength="80"></label></div>
+    <datalist id="dlHerT">${(HER || []).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist>
+    <label class="f"><span>Punto de encuentro</span><input type="text" name="punto" maxlength="150" placeholder="Ej. Salón del Reino, casa de la familia Yax"></label>
+    <div class="mapa-wrap"><div id="aMapa" class="mapa chico"></div>
+      <div class="mapa-btns"><button type="button" class="btn btn-sm" onclick="puntoDesdeGps()"><span class="ico">${ICON.gps}</span>Usar mi ubicación</button></div></div>
+    <p class="small muted" id="puntoTxt" style="margin-top:-4px">Toque el mapa para marcar el punto de encuentro (opcional).</p>
+    <label class="f"><span>Nota (opcional)</span><textarea name="nota" maxlength="500" style="min-height:60px" placeholder="Ej. Llevar tratados de la campaña"></textarea></label>
+    <button class="btn btn-primary btn-block" id="bSal">Programar salida</button>
+  </form>
+  <div class="h-sec">Salidas programadas</div>
+  ${sal.length ? `<div class="lista">${sal.map(x => `<div class="item">
+      <div class="grow"><div class="t">Territorio ${esc(x.territorio)} · <span class="cap" style="display:inline-block">${esc(fmtFecha(x.fecha))}</span>${x.hora ? ' · ' + esc(x.hora) : ''}</div>
+      <div class="small muted">${esc(x.conductor || 'Sin conductor')}${x.punto ? ' · ' + esc(x.punto) : ''}</div></div>
+      <button class="btn btn-sm btn-wa" onclick="compartirSalidaAdmin('${esc(x.id)}')">Avisar</button>
+      <button class="x" aria-label="Eliminar" onclick="borrarSalida('${esc(x.id)}')">✕</button></div>`).join('')}</div>`
+    : '<div class="empty">No hay salidas programadas.</div>'}`;
+}
+function initTerritorios() {
+  PUNTO = null;
+  AM = Mapa.crear($('#aMapa'), { onMapa: ll => ponerPunto(ll.lat, ll.lng) });
+  const sel = $('#sTerr');
+  sel.onchange = () => AM.seleccionar(sel.value);
+  AM.seleccionar(sel.value);
+}
+function ponerPunto(lat, lng) {
+  PUNTO = { lat: +lat.toFixed(6), lng: +lng.toFixed(6) };
+  AM.marcarPunto(PUNTO.lat, PUNTO.lng);
+  const t = Mapa.territorioDe(PUNTO.lat, PUNTO.lng);
+  $('#puntoTxt').innerHTML = `Punto marcado${t != null ? ' (en el territorio ' + esc(t) + ')' : ''}. <a href="#" onclick="event.preventDefault();PUNTO=null;AM.marcarPunto(null);this.parentNode.textContent='Toque el mapa para marcar el punto de encuentro (opcional).'">Quitar</a>`;
+}
+function puntoDesdeGps() {
+  if (!navigator.geolocation) return toast('GPS no disponible', 'err');
+  toast('Buscando su ubicación…');
+  navigator.geolocation.getCurrentPosition(p => { ponerPunto(p.coords.latitude, p.coords.longitude); AM.map.setView([p.coords.latitude, p.coords.longitude], 17); },
+    () => toast('No se pudo obtener la ubicación. Revise el permiso del GPS.', 'err'), { enableHighAccuracy: true, timeout: 30000 });
+}
+async function guardarSalida(e) {
+  e.preventDefault();
+  const f = e.target, b = $('#bSal');
+  b.disabled = true;
+  try {
+    await post('guardarSalida', { fecha: f.fecha.value, hora: f.hora.value.trim(), territorio: f.territorio.value, conductor: f.conductor.value.trim(), punto: f.punto.value.trim(), nota: f.nota.value.trim(), lat: PUNTO ? PUNTO.lat : '', lng: PUNTO ? PUNTO.lng : '' });
+    await recargarData(); toast('Salida programada', 'ok'); render();
+  } catch (err) { toast(err.message, 'err'); b.disabled = false; }
+}
+async function borrarSalida(id) {
+  if (!await confirmar('¿Eliminar esta salida programada?')) return;
+  try { await post('borrarSalida', { id }); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
+}
+function compartirSalidaAdmin(id) {
+  const x = (DATA.salidas || []).find(s => s.id === id); if (!x) return;
+  const c = x.lat && x.lng ? { lat: x.lat, lng: x.lng } : Mapa.centro(x.territorio);
+  hojaCompartir('Avisar salida', `Salida a predicar — ${fmtLarga(x.fecha)}${x.hora ? ', ' + x.hora : ''}\nTerritorio ${x.territorio}` +
+    (x.conductor ? `\nConductor: ${x.conductor}` : '') + (x.punto ? `\nPunto de encuentro: ${x.punto}` : '') + (x.nota ? `\n${x.nota}` : '') +
+    (c ? `\nUbicación: ${Mapa.enlaceMapa(c.lat, c.lng)}` : '') + `\nVer el territorio: ${Mapa.enlaceApp(x.territorio)}`);
 }
 
 /* ---------- Recordatorios ---------- */

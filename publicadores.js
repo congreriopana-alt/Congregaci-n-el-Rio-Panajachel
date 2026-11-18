@@ -4,6 +4,7 @@ const VISTAS = [
   ['inicio', 'Inicio', ICON.home],
   ['reuniones', 'Reuniones', ICON.book],
   ['asignaciones', 'Asignaciones', ICON.list],
+  ['territorios', 'Territorios', ICON.map],
   ['anuncios', 'Anuncios', ICON.bell],
   ['preguntas', 'Preguntas', ICON.chat]
 ];
@@ -15,7 +16,17 @@ $('#tabs').addEventListener('click', e => { const b = e.target.closest('button')
 if (DEMO) $('#demoBanner').hidden = false;
 if (CFG.CONGREGACION) $('#brand').textContent = CFG.CONGREGACION;
 
-function irA(v) { vista = v; store.set('vista', v); render(); window.scrollTo(0, 0); }
+function irA(v) {
+  if (location.hash) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+  vista = v; store.set('vista', v); render(); window.scrollTo(0, 0);
+}
+let terrSel = null;
+function leerHash() {
+  const m = location.hash.match(/^#territorio-(\w+)$/);
+  if (m) { vista = 'territorios'; terrSel = m[1]; }
+}
+leerHash();
+window.addEventListener('hashchange', () => { leerHash(); render(); });
 
 async function cargar() {
   const cache = DEMO ? null : store.get('cache_data', null);
@@ -34,6 +45,8 @@ async function cargar() {
 function render() {
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === vista));
   if (!DATA) return;
+  if (vista !== 'territorios' && T.mapa) { T.mapa.destruir(); T.mapa = null; }
+  if (vista === 'territorios') return renderTerritorios();
   const f = { inicio: vInicio, reuniones: vReuniones, asignaciones: vAsignaciones, anuncios: vAnuncios, preguntas: vPreguntas }[vista] || vInicio;
   $('#app').innerHTML = f();
   if (vista === 'preguntas') cargarMisPreguntas();
@@ -109,6 +122,8 @@ function vInicio() {
     <datalist id="dlNombres">${nombres.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
     ${mis}
   </div>
+
+  ${proxSalidas().length ? `<div class="h-sec">Próxima salida a predicar <button onclick="irA('territorios')">Ver mapa</button></div>${tarjetaSalida(proxSalidas()[0])}` : ''}
 
   ${eventos.length ? `<div class="h-sec">Próximos eventos <button onclick="irA('anuncios')">Ver todos</button></div>
     <div class="lista">${eventos.map(a => `<div class="item">${fechaBox(a.fecha)}<div class="grow"><div class="t">${esc(a.titulo)}</div>
@@ -199,5 +214,94 @@ async function cargarMisPreguntas() {
   } catch (e) { cont.innerHTML = `<div class="empty small">No se pudieron cargar: ${esc(e.message)}</div>`; }
 }
 
+/* ---------- Territorios ---------- */
+const T = { mapa: null, gps: false, pos: null };
+const proxSalidas = () => (DATA.salidas || []).filter(x => x.fecha >= hoy());
+function tarjetaSalida(x, conMapa = true) {
+  const c = x.lat && x.lng ? { lat: x.lat, lng: x.lng } : Mapa.centro(x.territorio);
+  return `<div class="card salida">
+    <div class="row"><span class="chip ok">${x.fecha === hoy() ? 'Hoy' : esc(fmtFecha(x.fecha))}</span>${x.hora ? `<span class="small muted">${esc(x.hora)}</span>` : ''}</div>
+    <h3 style="font-size:1.1rem;margin-top:8px">Territorio ${esc(x.territorio)}</h3>
+    <div class="small muted cap">${esc(fmtLarga(x.fecha))}</div>
+    ${x.conductor ? `<div class="small" style="margin-top:6px">Conductor: <b>${esc(x.conductor)}</b></div>` : ''}
+    ${x.punto ? `<div class="small">Punto de encuentro: <b>${esc(x.punto)}</b></div>` : ''}
+    ${x.nota ? `<div class="small pre" style="margin-top:4px">${esc(x.nota)}</div>` : ''}
+    <div class="row" style="margin-top:10px">
+      ${conMapa ? `<button class="btn btn-sm btn-primary" onclick="verTerritorio('${esc(x.territorio)}')">Ver en el mapa</button>` : ''}
+      ${c ? `<a class="btn btn-sm" target="_blank" rel="noopener" href="${Mapa.enlaceRuta(c.lat, c.lng)}">Cómo llegar</a>` : ''}
+      <button class="btn btn-sm" onclick="compartirSalida('${esc(x.id)}')">Compartir</button>
+    </div></div>`;
+}
+function verTerritorio(n) { terrSel = String(n); if (vista !== 'territorios') irA('territorios'); else { T.mapa && T.mapa.seleccionar(terrSel); pintarInfo(); $('#tMapa').scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
+function compartirSalida(id) {
+  const x = (DATA.salidas || []).find(s => s.id === id); if (!x) return;
+  const c = x.lat && x.lng ? { lat: x.lat, lng: x.lng } : Mapa.centro(x.territorio);
+  hojaCompartir('Salida a predicar', `Salida a predicar — ${fmtLarga(x.fecha)}${x.hora ? ', ' + x.hora : ''}\nTerritorio ${x.territorio}` +
+    (x.conductor ? `\nConductor: ${x.conductor}` : '') + (x.punto ? `\nPunto de encuentro: ${x.punto}` : '') +
+    (c ? `\nUbicación: ${Mapa.enlaceMapa(c.lat, c.lng)}` : '') + `\nVer el territorio: ${Mapa.enlaceApp(x.territorio)}`);
+}
+function compartirTerritorio(n) {
+  const c = Mapa.centro(n);
+  hojaCompartir('Territorio ' + n, `Territorio ${n}\nUbicación: ${Mapa.enlaceMapa(c.lat, c.lng)}\nVer el territorio en la app: ${Mapa.enlaceApp(n)}`);
+}
+function compartirUbicacion() {
+  if (!T.pos) { toast('Primero toque "Mi ubicación" y espere a que aparezca el punto azul'); return activarGps(true); }
+  const p = T.pos;
+  hojaCompartir('Enviar mi ubicación', `📍 Estoy aquí${p.territorio != null ? ' (territorio ' + p.territorio + ')' : ''}:\n${Mapa.enlaceMapa(p.lat, p.lng)}\nCoordenadas: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)} (precisión ±${p.precision} m)`);
+}
+function activarGps(on) {
+  T.gps = on;
+  const b = $('#bGps'); if (b) b.classList.toggle('on', on);
+  const est = $('#gpsEstado');
+  if (!on) { T.mapa && T.mapa.detener(); T.pos = null; if (est) est.hidden = true; return; }
+  if (est) { est.hidden = false; est.className = 'gps-estado'; est.textContent = 'Buscando su ubicación con el GPS…'; }
+  T.mapa.seguirme(p => {
+    T.pos = p;
+    const e = $('#gpsEstado'); if (!e) return;
+    e.className = 'gps-estado'; e.hidden = false;
+    e.innerHTML = p.territorio != null
+      ? `Usted está en el <b>territorio ${esc(p.territorio)}</b> · precisión ±${p.precision} m`
+      : `Usted está fuera de los territorios · precisión ±${p.precision} m`;
+  }, m => { const e = $('#gpsEstado'); if (e) { e.hidden = false; e.className = 'gps-estado err'; e.textContent = m; } T.gps = false; $('#bGps')?.classList.remove('on'); });
+}
+function pintarInfo() {
+  const box = $('#tInfo'); if (!box) return;
+  $$('#tChips button').forEach(b => b.classList.toggle('on', b.dataset.n === String(terrSel)));
+  if (terrSel == null || !Mapa.buscar(terrSel)) { box.innerHTML = ''; return; }
+  const c = Mapa.centro(terrSel);
+  const sal = proxSalidas().filter(x => String(x.territorio) === String(terrSel));
+  box.innerHTML = `<div class="card"><div class="row"><h3 class="grow" style="font-size:1.1rem">Territorio ${esc(terrSel)}</h3>
+      <button class="x" aria-label="Quitar selección" onclick="terrSel=null;T.mapa.verTodos();pintarInfo()">✕</button></div>
+    <p class="small muted" style="margin:4px 0 10px">${sal.length ? `Próxima salida: <b>${esc(fmtLarga(sal[0].fecha))}${sal[0].hora ? ', ' + esc(sal[0].hora) : ''}</b>` : 'Sin salida programada.'}</p>
+    <div class="row"><a class="btn btn-sm" target="_blank" rel="noopener" href="${Mapa.enlaceRuta(c.lat, c.lng)}">Cómo llegar</a>
+      <button class="btn btn-sm" onclick="compartirTerritorio('${esc(terrSel)}')">Compartir territorio</button></div></div>`;
+}
+async function renderTerritorios() {
+  const app = $('#app');
+  if (T.mapa && $('#tMapa')) { pintarSalidas(); pintarInfo(); return; }
+  app.innerHTML = '<div class="skeleton" style="height:300px"></div>';
+  try { await Mapa.territorios(); } catch (e) { app.innerHTML = '<div class="empty">No se pudo cargar el mapa de territorios.</div>'; return; }
+  const prox = new Set(proxSalidas().map(x => String(x.territorio)));
+  app.innerHTML = `<h1 class="titulo-vista">Territorios</h1>
+    <div id="tSalidas"></div>
+    <div id="gpsEstado" class="gps-estado" hidden></div>
+    <div class="mapa-wrap"><div id="tMapa" class="mapa"></div>
+      <div class="mapa-btns"><button id="bGps" class="btn btn-sm" onclick="activarGps(!T.gps)"><span class="ico">${ICON.gps}</span>Mi ubicación</button>
+      <button class="btn btn-sm btn-gold" onclick="compartirUbicacion()">Enviar mi ubicación</button></div></div>
+    <div id="tInfo"></div>
+    <div class="h-sec">Elegir territorio</div>
+    <div class="chips-t" id="tChips">${Mapa.numeros().map(n => `<button data-n="${esc(n)}" class="${prox.has(String(n)) ? 'prox' : ''}" onclick="verTerritorio('${esc(n)}')">${esc(n)}</button>`).join('')}</div>
+    <p class="small muted" style="margin-top:14px">El mapa de territorios y el GPS funcionan <b>sin internet</b>. Las calles del fondo se guardan en el teléfono cada vez que las ve con internet; abra una vez cada territorio con datos o wifi para tenerlo disponible después. Línea verde = territorio con salida programada.</p>`;
+  T.mapa = Mapa.crear($('#tMapa'), { onTerritorio: n => { terrSel = String(n); T.mapa.seleccionar(terrSel, false); pintarInfo(); } });
+  if (terrSel != null) T.mapa.seleccionar(terrSel);
+  pintarSalidas(); pintarInfo();
+  if (T.gps) activarGps(true);
+}
+function pintarSalidas() {
+  const s = proxSalidas().slice(0, 3);
+  $('#tSalidas').innerHTML = s.length ? s.map(x => tarjetaSalida(x)).join('') : '';
+}
+
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && DATA) cargar(); });
+Mapa.territorios().then(() => { if (DATA && vista === 'inicio') render(); }).catch(() => {});
 cargar();
