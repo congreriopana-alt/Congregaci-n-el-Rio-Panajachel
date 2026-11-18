@@ -1,0 +1,16 @@
+{
+  "name": "Congregación El Río-Panajachel",
+  "short_name": "El Río",
+  "description": "Programas, asignaciones y anuncios de la congregación",
+  "lang": "es",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f2ec",
+  "theme_color": "#1f3a5f",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
