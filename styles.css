@@ -239,3 +239,27 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .hist { font-size: .84rem; margin-top: -6px; margin-bottom: 12px; padding: 9px 12px; border-radius: 10px; background: #f1ece2; }
 .hist.alerta { background: #fff4d6; }
 .logo { width: 42px; height: 42px; border-radius: 50%; background: #fff; flex: 0 0 42px; box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
+.compartir-edit { min-height: 260px; font-size: .9rem; line-height: 1.4; }
+.hoy-card { background: linear-gradient(135deg, #1f8f4e 0%, #2a7a52 100%); color: #fff; border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.hoy-card .k { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 750; color: #d6f5e0; }
+.hoy-card h2 { font-size: 1.3rem; margin: 4px 0 2px; }
+.hoy-card .det { font-size: .92rem; color: #eafaf0; }
+.hoy-card .btn { min-height: 38px; padding: 7px 13px; font-size: .88rem; }
+.hoy-card .btn-w { background: #fff; color: #1f6b40; border-color: #fff; }
+.hoy-card .btn-t { background: transparent; color: #fff; border-color: rgba(255,255,255,.6); }
+/* Zoom */
+.zoom-card { border-top: 4px solid #2d8cff; }
+.zoom-logo { background: #2d8cff; color: #fff; font-weight: 800; font-size: .78rem; padding: 3px 8px; border-radius: 6px; }
+.btn-zoom { background: #2d8cff; border-color: #2d8cff; color: #fff; font-size: 1.02rem; min-height: 50px; }
+.zoom-datos { margin-top: 10px; display: grid; gap: 6px; }
+.zoom-datos > div { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "l b" "v b"; align-items: center; background: #f4f8ff; border-radius: 10px; padding: 8px 10px; }
+.zoom-datos span { grid-area: l; }
+.zoom-datos b { grid-area: v; font-size: 1.1rem; letter-spacing: .04em; }
+.zoom-datos .btn { grid-area: b; }
+.zoom-hoy { background: linear-gradient(135deg, #1f5fbf 0%, #2d8cff 100%); }
+.zoom-hoy .btn-w { color: #1f5fbf; }
+.dias-sel { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+.dias-sel label { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 11px; font-size: .86rem; cursor: pointer; background: var(--surface); }
+.dias-sel input { margin: 0; }
+.dias-sel label:has(input:checked) { background: var(--navy); color: #fff; border-color: var(--navy); }
+.horario-fila { display: grid; grid-template-columns: 1.3fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 8px; }

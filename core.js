@@ -143,8 +143,9 @@ const Demo = (() => {
         asignaciones: st.asignaciones.filter(a => a.fecha >= addDias(h, -7)).sort((a, b) => a.fecha.localeCompare(b.fecha)),
         ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre),
         puntos: puntosActivos(),
+        zoom: st.zoom || null,
         registro: (st.registro ||= []).filter(x => x.fecha >= addDias(h, -730)),
-        salidas: (st.salidas ||= []).filter(x => x.fecha >= addDias(h, -1)).sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
+        salidas: (st.salidas ||= []).filter(x => x.repetir === 'semanal' || x.fecha >= addDias(h, -1)).sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
       }));
       case 'enviarPregunta': {
         const o = { id: uid(), fecha: new Date().toISOString(), nombre: p.nombre || '', anciano: p.anciano || '', pregunta: p.pregunta, respuesta: '', estado: 'pendiente' };
@@ -180,7 +181,8 @@ const Demo = (() => {
         st.anuncios.push(o); guardar(); return o;
       }
       case 'guardarSalida': {
-        const o = { id: p.id || uid(), fecha: p.fecha, hora: p.hora || '', territorio: String(p.territorio), conductor: p.conductor || '', punto: p.punto || '', lat: p.lat || '', lng: p.lng || '', nota: p.nota || '', creado: new Date().toISOString() };
+        if ((p.tipo || 'casa') === 'casa' && !p.territorio) throw new Error('Para casa en casa elija el territorio');
+        const o = { id: p.id || uid(), tipo: p.tipo || 'casa', repetir: p.repetir === 'semanal' ? 'semanal' : '', dias: p.repetir === 'semanal' ? String(p.dias || '') : '', fecha: p.fecha, hora: p.hora || '', territorio: String(p.territorio || ''), conductor: p.conductor || '', punto: p.punto || '', lat: p.lat || '', lng: p.lng || '', nota: p.nota || '', creado: new Date().toISOString() };
         st.salidas = (st.salidas || []).filter(x => x.id !== o.id); st.salidas.push(o); guardar(); return o;
       }
       case 'borrarRegistro': st.registro = (st.registro || []).filter(x => x.id !== p.id); guardar(); return true;
@@ -192,6 +194,12 @@ const Demo = (() => {
         return f;
       }
       case 'ajustes': return { codigo: st.codigo || '' };
+      case 'guardarZoom': {
+        if (p.borrar) { st.zoom = null; guardar(); return null; }
+        if (p.enlace && !/^https:\/\/([\w-]+\.)*zoom\.us\//i.test(p.enlace)) throw new Error('El enlace debe ser de zoom.us');
+        st.zoom = { tema: p.tema || '', enlace: p.enlace || '', id: p.id || '', codigo: p.acceso || '', horarios: p.horarios || [], nota: p.nota || '', actualizado: new Date().toISOString() };
+        guardar(); return st.zoom;
+      }
       case 'guardarCodigo': st.codigo = String(p.codigo || '').trim(); guardar(); return { codigo: st.codigo };
       case 'borrarPunto': st.puntos = (st.puntos || []).filter(q => q.id !== p.id); guardar(); return true;
       case 'borrarSalida': st.salidas = (st.salidas || []).filter(x => x.id !== p.id); guardar(); return true;
@@ -359,4 +367,163 @@ function confirmar(msg, ok = 'Sí, continuar') {
     document.body.appendChild(d);
     $('[data-r="1"]', d).focus();
   });
+}
+
+/* ---------- Arreglos para la predicación ---------- */
+const TIPOS_SALIDA = {
+  casa: { nombre: 'Casa en casa', actividad: 'nuestra salida a la predicación de casa en casa' },
+  cartas: { nombre: 'Cartas', actividad: 'nuestro arreglo para la predicación por cartas' },
+  publica: { nombre: 'Predicación pública', actividad: 'nuestro arreglo para la predicación pública' },
+  telefono: { nombre: 'Teléfono', actividad: 'nuestro arreglo para la predicación por teléfono' },
+  revisitas: { nombre: 'Revisitas y estudios', actividad: 'nuestro arreglo para hacer revisitas y estudios' },
+  varias: { nombre: 'Varias facetas', actividad: 'nuestros arreglos para la predicación' }
+};
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const tipoSalida = x => TIPOS_SALIDA[x.tipo] || TIPOS_SALIDA.casa;
+const tituloSalida = x => x.territorio ? `${tipoSalida(x).nombre} · Territorio ${x.territorio}` : tipoSalida(x).nombre;
+
+/* Próxima fecha de una salida (si se repite cada semana, la siguiente desde hoy) */
+const diasDe = x => x.dias ? String(x.dias).split(',').filter(Boolean).map(Number) : [parseYmd(x.fecha).getDay()];
+function fechaProxima(x, desde = hoy()) {
+  if (x.repetir !== 'semanal') return x.fecha;
+  const dias = diasDe(x);
+  const d = parseYmd(x.fecha > desde ? x.fecha : desde);
+  for (let i = 0; i < 7; i++) { if (dias.includes(d.getDay())) return ymd(d); d.setDate(d.getDate() + 1); }
+  return x.fecha;
+}
+const unirY = l => l.length <= 1 ? (l[0] || '') : l.slice(0, -1).join(', ') + ' y ' + l[l.length - 1];
+/* Lista de salidas próximas con su fecha real, ordenadas */
+function salidasProximas(lista) {
+  return (lista || []).map(x => ({ ...x, fechaOriginal: x.fecha, fecha: fechaProxima(x) }))
+    .filter(x => x.fecha >= hoy())
+    .sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || '')));
+}
+const textoRepetir = x => {
+  if (x.repetir !== 'semanal') return '';
+  const dias = x.dias ? diasDe(x) : [parseYmd(x.fechaOriginal || x.fecha).getDay()];
+  return 'cada ' + unirY([...dias].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map(d => DIAS[d]));
+};
+
+/* ----- Mensaje cálido automático ----- */
+function momentoDelDia(hora) {
+  const t = String(hora || '').toLowerCase();
+  const m = t.match(/(\d{1,2})(?::\d{2})?/);
+  if (!m) return '';
+  const h = Number(m[1]);
+  const marcas = t.match(/[ap]\.?\s*m\.?/g);
+  const pm = marcas ? /p/.test(marcas[marcas.length - 1]) : (h >= 1 && h <= 6);
+  if (!marcas && h >= 13) return h >= 18 ? 'noche' : 'tarde';
+  if (pm) return (h >= 6 && h < 12) ? 'noche' : 'tarde';
+  return 'mañana';
+}
+function partesMensaje(x, enlaces = true) {
+  const ahora = new Date();
+  const hh = ahora.getHours();
+  const saludo = hh < 12 ? '¡Muy buenos días' : hh < 19 ? '¡Muy buenas tardes' : '¡Muy buenas noches';
+  const mom = momentoDelDia(x.hora);
+  const f = x.fecha, h = hoy(), man = addDias(h, 1);
+  const porLa = mom ? ` por la ${mom}` : '';
+  const fd = parseYmd(f);
+  const cuando = f === h ? `hoy${porLa}` : f === man ? `mañana${porLa}` : `el ${DIAS[fd.getDay()]} ${fd.getDate()} de ${fd.toLocaleDateString('es-GT', { month: 'long' })}${porLa}`;
+  const momento = f === h ? (mom ? `esta ${mom}` : 'hoy') : f === man ? 'mañana' : 'ese día';
+  const hora = x.hora ? (/\d\s*(a|–|-)\s*\d/.test(x.hora) ? `, de ${x.hora}` : `, a las ${x.hora}`) : '';
+  let lugar = '';
+  if (x.punto) {
+    const p = x.punto.trim();
+    lugar = /^(el|la|los|las|en)\b/i.test(p) ? `, ${/^en\b/i.test(p) ? '' : 'en '}${p}` : /^sal[oó]n/i.test(p) ? `, en el ${p}` : `, en ${p}`;
+  }
+  const actividad = tipoSalida(x).actividad + (x.territorio ? ` en el territorio ${x.territorio}` : '');
+  const c = x.lat && x.lng ? { lat: x.lat, lng: x.lng } : (x.territorio && typeof Mapa !== 'undefined' ? Mapa.centro(x.territorio) : null);
+  let extra = '';
+  if (enlaces && c) extra += `\n📍 Cómo llegar: ${Mapa.enlaceMapa(c.lat, c.lng)}`;
+  if (enlaces && x.territorio && typeof Mapa !== 'undefined') extra += `\n🗺️ Ver el territorio: ${Mapa.enlaceApp(x.territorio)}`;
+  return { saludo, cuando, momento, hora, lugar, actividad, conductor: x.conductor || '', nota: x.nota || '', extra };
+}
+const PLANTILLA_BASE = `{saludo}, queridos hermanos!
+
+Esperamos que se encuentren muy bien y estén disfrutando de este hermoso día.
+
+Les recordamos que {cuando} tendremos {actividad}{hora}{lugar}.
+
+Aprovechemos esta oportunidad para seguir dando un «testimonio completo», participando con entusiasmo en las diferentes facetas de nuestro ministerio.
+
+¡Será un gusto compartir {momento} con ustedes!`;
+const plantillaDe = tipo => (store.get('plantillas', {})[tipo]) || PLANTILLA_BASE;
+function mensajeSalida(x, plantilla) {
+  const p = partesMensaje(x);
+  let t = (plantilla || plantillaDe(x.tipo || 'casa')).replace(/\{(\w+)\}/g, (m, k) => k in p ? p[k] : m);
+  if (x.conductor && !/\{conductor\}/.test(plantilla || plantillaDe(x.tipo || 'casa'))) t += `\nConductor: ${x.conductor}`;
+  if (x.nota && !/\{nota\}/.test(plantilla || plantillaDe(x.tipo || 'casa'))) t += `\n${x.nota}`;
+  return t + p.extra;
+}
+/* Convierte un mensaje ya escrito en plantilla (cambia los datos por {marcadores}) */
+function aPlantilla(x, texto) {
+  const p = partesMensaje(x);
+  let t = texto;
+  if (p.extra) t = t.replace(p.extra, '');
+  if (x.conductor) t = t.replace(`\nConductor: ${x.conductor}`, '');
+  if (x.nota) t = t.replace(`\n${x.nota}`, '');
+  ['actividad', 'cuando', 'momento', 'lugar', 'hora', 'saludo'].sort((a, b) => p[b].length - p[a].length)
+    .forEach(k => { if (p[k]) t = t.split(p[k]).join(`{${k}}`); });
+  return t.trim();
+}
+
+
+/* ---------- Zoom ---------- */
+function fmtHora(h) {
+  const [H, M] = String(h || '').split(':').map(Number);
+  if (isNaN(H)) return h || '';
+  const pm = H >= 12, h12 = ((H + 11) % 12) + 1;
+  return `${h12}:${String(M || 0).padStart(2, '0')} ${pm ? 'p. m.' : 'a. m.'}`;
+}
+/* "del 16 al 22 de noviembre" para la semana actual (lunes a domingo) */
+function textoSemana(off = 0) {
+  const s = semana(off), a = parseYmd(s.inicio), b = parseYmd(s.fin);
+  const mes = d => d.toLocaleDateString('es-GT', { month: 'long' });
+  return a.getMonth() === b.getMonth() ? `del ${a.getDate()} al ${b.getDate()} de ${mes(b)}` : `del ${a.getDate()} de ${mes(a)} al ${b.getDate()} de ${mes(b)}`;
+}
+const TEMA_ZOOM = 'Reunión {semana}: Vida y Ministerio y Estudio de La Atalaya';
+const temaZoom = z => String((z && z.tema) || TEMA_ZOOM).replace(/\{semana\}/g, textoSemana());
+const horariosOrdenados = z => [...((z && z.horarios) || [])].sort((a, b) => ((a.dia + 6) % 7) - ((b.dia + 6) % 7) || a.hora.localeCompare(b.hora));
+const textoHorario = h => `${DIAS[h.dia]} ${fmtHora(h.hora)}${h.nombre ? ' (' + h.nombre + ')' : ''}`;
+function mensajeZoom(z) {
+  const hs = horariosOrdenados(z).map(textoHorario);
+  return `Congregación ${CFG.CONGREGACION || 'el Río Panajachel'} le está invitando a una reunión de Zoom\n\n` +
+    `Tema: ${temaZoom(z)}\n\n` +
+    (hs.length ? `Hora: ${hs[0]}${hs.slice(1).map(h => '\n         ' + h).join('')}\n\n` : '') +
+    (z.id ? `ID de reunión: ${z.id}\n` : '') + (z.codigo ? `Código de acceso: ${z.codigo}\n` : '') +
+    (z.enlace ? `\nÚnase a la reunión de Zoom\n${z.enlace}` : '') + (z.nota ? `\n\n${z.nota}` : '');
+}
+/* Reunión de hoy por Zoom: {h, minutos para empezar} o null */
+function reunionHoy(z) {
+  if (!z || !z.horarios) return null;
+  const ahora = new Date(), dia = ahora.getDay(), min = ahora.getHours() * 60 + ahora.getMinutes();
+  const hoyH = horariosOrdenados(z).filter(h => h.dia === dia);
+  for (const h of hoyH) {
+    const [H, M] = h.hora.split(':').map(Number), ini = H * 60 + M;
+    if (min <= ini + 120) return { h, faltan: ini - min };   // se muestra hasta 2 horas después de empezar
+  }
+  return null;
+}
+/* Lee una invitación de Zoom pegada (ID, código y enlace) */
+function leerInvitacionZoom(t) {
+  const r = {};
+  const id = t.match(/ID de (?:la )?reuni[oó]n:?\s*([\d ]{9,})/i) || t.match(/Meeting ID:?\s*([\d ]{9,})/i);
+  if (id) r.id = id[1].trim();
+  const c = t.match(/(?:C[oó]digo de acceso|Contrase[nñ]a|Passcode):?\s*(\S+)/i);
+  if (c) r.codigo = c[1].trim();
+  const e = t.match(/https:\/\/[\w.-]*zoom\.us\/[^\s<>"]+/i);
+  if (e) r.enlace = e[0];
+  const tema = t.match(/Tema:?\s*(.+)/i);
+  if (tema) r.temaTexto = tema[1].trim();
+  const hs = [];
+  const re = /(domingo|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)\s*(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m/gi;
+  let m;
+  while ((m = re.exec(t))) {
+    const nombre = norm(m[1]).replace('miercoles', 'miércoles').replace('sabado', 'sábado');
+    let H = Number(m[2]) % 12; if (/p/i.test(m[4])) H += 12;
+    hs.push({ dia: DIAS.indexOf(nombre), hora: `${String(H).padStart(2, '0')}:${m[3] || '00'}` });
+  }
+  if (hs.length) r.horarios = hs;
+  return r;
 }

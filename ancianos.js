@@ -5,7 +5,7 @@ let vista = sesion.get('vista', 'subir');
 let recSemana = 0, filtroAsig = '';
 const VISTAS = [
   ['subir', 'Subir programa'], ['publicado', 'Publicado'], ['anuncios', 'Anuncios'],
-  ['asignaciones', 'Asignaciones'], ['territorios', 'Territorios'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos'], ['ajustes', 'Ajustes']
+  ['asignaciones', 'Asignaciones'], ['territorios', 'Territorios'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos'], ['zoom', 'Zoom'], ['ajustes', 'Ajustes']
 ];
 let HIST = null;
 if (DEMO) $('#demoBanner').hidden = false;
@@ -73,6 +73,7 @@ async function render() {
     else if (vista === 'publicado') app.innerHTML = vPublicado();
     else if (vista === 'anuncios') app.innerHTML = vAnuncios();
     else if (vista === 'asignaciones') { if (!ASIG || !HIST) { app.innerHTML = '<div class="skeleton"></div>'; ASIG ||= await post('listarAsignaciones'); HER ||= await post('listarHermanos'); HIST ||= await post('historial'); } app.innerHTML = vAsignaciones(); }
+    else if (vista === 'zoom') { app.innerHTML = vZoom(); initZoom(); }
     else if (vista === 'ajustes') { app.innerHTML = '<div class="skeleton"></div>'; app.innerHTML = vAjustes(await post('ajustes')); }
     else if (vista === 'hermanos') { if (!HER) { app.innerHTML = '<div class="skeleton"></div>'; HER = await post('listarHermanos'); } app.innerHTML = vHermanos(); }
     else if (vista === 'preguntas') app.innerHTML = vPreguntas();
@@ -329,36 +330,40 @@ async function borrarAsig(id) {
 /* ---------- Territorios: el encargado programa las salidas ---------- */
 let AM = null, PUNTO = null;
 function vTerritorios() {
-  const sal = (DATA.salidas || []).filter(x => x.fecha >= hoy());
+  const sal = salidasProximas(DATA.salidas);
   const nums = Mapa.numeros();
-  return `<h1 class="titulo-vista">Territorios</h1>
-  <p class="small muted" style="margin-top:-6px">Programe qué territorio se predicará. Los publicadores lo verán en el mapa y el conductor recibirá su recordatorio.</p>
+  const tipoSel = sesion.get('tipo_salida', 'casa');
+  return `<h1 class="titulo-vista">Territorios y predicación</h1>
+  <p class="small muted" style="margin-top:-6px">Programe los arreglos para la predicación (casa en casa, cartas, predicación pública…). Los publicadores los ven en Inicio y en el mapa, y el conductor recibe su recordatorio.</p>
   <form class="card" id="fSal" onsubmit="guardarSalida(event)">
+    <label class="f"><span>Tipo de arreglo</span><select name="tipo" id="sTipo">${Object.entries(TIPOS_SALIDA).map(([k, t]) => `<option value="${k}" ${k === tipoSel ? 'selected' : ''}>${esc(t.nombre)}</option>`).join('')}</select></label>
     <div class="grid2"><label class="f"><span>Fecha</span><input type="date" name="fecha" required value="${esc(hoy())}"></label>
-      <label class="f"><span>Hora</span><input type="text" name="hora" maxlength="20" placeholder="Ej. 9:00 a. m."></label></div>
-    <div class="grid2 resp"><label class="f"><span>Territorio</span><select name="territorio" id="sTerr">${nums.map(n => `<option value="${esc(n)}">Territorio ${esc(n)}</option>`).join('')}</select></label>
-      <label class="f"><span>Conductor</span><input type="text" name="conductor" list="dlHerT" maxlength="80" oninput="$('#histCond').innerHTML=infoHermano(this.value)"></label></div>
+      <label class="f"><span>Horario</span><input type="text" name="hora" maxlength="30" placeholder="Ej. 3:45 a 6:00 p. m."></label></div>
+    <label class="small row" style="gap:8px;margin:-4px 0 12px"><input type="checkbox" name="repetir" id="cRep"> Repetir cada semana</label>
+    <div class="dias-sel" id="diasSel" hidden>${[1, 2, 3, 4, 5, 6, 0].map(d => `<label><input type="checkbox" name="dia" value="${d}">${DIAS[d].slice(0, 3)}</label>`).join('')}</div>
+    <div class="grid2 resp"><label class="f"><span>Territorio</span><select name="territorio" id="sTerr"><option value="">Sin territorio</option>${nums.map(n => `<option value="${esc(n)}">Territorio ${esc(n)}</option>`).join('')}</select></label>
+      <label class="f"><span>Conductor (opcional)</span><input type="text" name="conductor" list="dlHerT" maxlength="80" oninput="$('#histCond').innerHTML=infoHermano(this.value)"></label></div>
     <div id="histCond"></div>
     <div id="estadoTerr"></div>
     <datalist id="dlHerT">${(HER || []).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist>
-    <label class="f"><span>Punto de encuentro</span><input type="text" name="punto" maxlength="150" placeholder="Ej. Salón del Reino, casa de la familia Yax"></label>
+    <label class="f"><span>Punto de encuentro</span><input type="text" name="punto" maxlength="150" placeholder="Ej. Salón del Reino" value="${tipoSel === 'casa' ? '' : 'Salón del Reino'}"></label>
     <div class="mapa-wrap"><div id="aMapa" class="mapa chico"></div>
       <div class="mapa-btns"><button type="button" class="btn btn-sm" onclick="puntoDesdeGps()"><span class="ico">${ICON.gps}</span>Usar mi ubicación</button></div></div>
     <p class="small muted" id="puntoTxt" style="margin-top:-4px">Toque el mapa para marcar el punto de encuentro (opcional).</p>
     <label class="f"><span>Nota (opcional)</span><textarea name="nota" maxlength="500" style="min-height:60px" placeholder="Ej. Llevar tratados de la campaña"></textarea></label>
-    <button class="btn btn-primary btn-block" id="bSal">Programar salida</button>
+    <button class="btn btn-primary btn-block" id="bSal">Programar arreglo</button>
   </form>
   ${(DATA.puntos || []).length ? `<div class="h-sec">Puntos de predicación activos</div><div class="lista" style="margin-bottom:8px">${DATA.puntos.map(pt => `<div class="item">
       <div class="grow"><div class="t">${esc(pt.nombre)}</div><div class="small muted">${pt.territorio ? 'Territorio ' + esc(pt.territorio) + ' · ' : ''}${esc(haceCuanto(pt.actualizado))}${pt.nota ? ' · ' + esc(pt.nota) : ''}</div></div>
       <button class="x" aria-label="Quitar punto" onclick="borrarPunto('${esc(pt.id)}')">✕</button></div>`).join('')}</div>
     <p class="small muted">Los publicadores marcan estos puntos desde su app; desaparecen solos después de 8 horas.</p>` : ''}
-  <div class="h-sec">Salidas programadas</div>
+  <div class="h-sec">Arreglos programados</div>
   ${sal.length ? `<div class="lista">${sal.map(x => `<div class="item">
-      <div class="grow"><div class="t">Territorio ${esc(x.territorio)} · <span class="cap" style="display:inline-block">${esc(fmtFecha(x.fecha))}</span>${x.hora ? ' · ' + esc(x.hora) : ''}</div>
+      <div class="grow"><div class="t">${esc(tituloSalida(x))} · <span class="cap" style="display:inline-block">${x.repetir === 'semanal' ? esc(textoRepetir(x)) + ' (próx. ' + esc(fmtFecha(x.fecha, { day: 'numeric', month: 'short' })) + ')' : esc(fmtFecha(x.fecha))}</span>${x.hora ? ' · ' + esc(x.hora) : ''}</div>
       <div class="small muted">${esc(x.conductor || 'Sin conductor')}${x.punto ? ' · ' + esc(x.punto) : ''}</div></div>
       <button class="btn btn-sm btn-wa" onclick="compartirSalidaAdmin('${esc(x.id)}')">Avisar</button>
       <button class="x" aria-label="Eliminar" onclick="borrarSalida('${esc(x.id)}')">✕</button></div>`).join('')}</div>`
-    : '<div class="empty">No hay salidas programadas.</div>'}
+    : '<div class="empty">No hay arreglos programados.</div>'}
   ${vRegistroTerritorios()}`;
 }
 
@@ -397,7 +402,7 @@ function programarTerr(n) {
 }
 function pintarEstadoTerr() {
   const box = $('#estadoTerr'), sel = $('#sTerr'); if (!box || !sel) return;
-  const t = Mapa.resumenRegistro(DATA.registro || [])[sel.value]; if (!t) return;
+  const t = Mapa.resumenRegistro(DATA.registro || [])[sel.value]; if (!t) { box.innerHTML = ''; return; }
   box.innerHTML = `<div class="hist ${t.estado === 'reciente' ? 'alerta' : ''}">Territorio ${esc(t.territorio)}: ${t.ultimoCompleto ? 'completo ' + esc(Mapa.textoDias(t.dias)) : 'sin registro de completo'}${t.enProgreso ? ' · en progreso' : ''}.${t.estado === 'reciente' ? ' <b>Se predicó hace poco.</b>' : ''}</div>`;
 }
 async function registrarAdmin(e) {
@@ -419,6 +424,64 @@ async function copiarRegistro() {
     .map(x => [x.territorio, x.fecha, x.estado, x.conductor, x.nota].join('\t'))].join('\n');
   try { await navigator.clipboard.writeText(t); toast(`${filas.length} registros copiados. Péguelos en una hoja de cálculo.`, 'ok'); }
   catch (e) { hojaCompartir('Registro de territorios', t); }
+}
+
+/* ---------- Zoom ---------- */
+let ZHOR = [];
+function vZoom() {
+  const z = DATA.zoom || {};
+  ZHOR = (z.horarios && z.horarios.length) ? z.horarios.map(h => ({ ...h })) : [{ dia: 4, hora: '19:00' }, { dia: 6, hora: '18:00' }];
+  return `<h1 class="titulo-vista">Zoom de las reuniones</h1>
+  <p class="small muted" style="margin-top:-6px">Se guarda una sola vez. Los publicadores ven el botón <b>Unirse por Zoom</b> en Reuniones, y el día de la reunión aparece en Inicio. El tema se actualiza solo cada semana.</p>
+  <details class="card" ${z.enlace ? '' : 'open'}><summary>Pegar la invitación de Zoom</summary>
+    <p class="small muted">Pegue aquí la invitación que les da Zoom (o la que mandan al grupo) y toque <b>Leer datos</b>: se llenan solos el ID, el código, el enlace y los horarios.</p>
+    <textarea id="zPegar" placeholder="ID de reunión: 863 4492 5500&#10;Código de acceso: 829604&#10;https://us02web.zoom.us/j/..."></textarea>
+    <button class="btn btn-primary" type="button" style="margin-top:8px" onclick="leerPegado()">Leer datos</button>
+  </details>
+  <form class="card" id="fZoom" onsubmit="guardarZoom(event)">
+    <label class="f"><span>Tema</span><input type="text" name="tema" maxlength="200" value="${esc(z.tema || TEMA_ZOOM)}"></label>
+    <p class="small muted" style="margin:-6px 0 12px">Donde dice <code class="k">{semana}</code> la app pone sola la semana actual: <b>${esc(textoSemana())}</b>.</p>
+    <div class="f" style="font-size:.84rem;font-weight:650;color:var(--muted);margin-bottom:6px">Horarios</div>
+    <div id="zHor"></div>
+    <button class="btn btn-sm" type="button" onclick="ZHOR.push({dia:0,hora:'10:00'});pintarHorarios()" style="margin-bottom:12px">+ Agregar horario</button>
+    <div class="grid2 resp"><label class="f"><span>ID de reunión</span><input type="text" name="idReunion" maxlength="30" inputmode="numeric" value="${esc(z.id || '')}" placeholder="863 4492 5500"></label>
+      <label class="f"><span>Código de acceso</span><input type="text" name="codigo" maxlength="30" value="${esc(z.codigo || '')}"></label></div>
+    <label class="f"><span>Enlace de Zoom</span><input type="url" name="enlace" required maxlength="400" value="${esc(z.enlace || '')}" placeholder="https://us02web.zoom.us/j/..."></label>
+    <label class="f"><span>Nota (opcional)</span><input type="text" name="nota" maxlength="300" value="${esc(z.nota || '')}" placeholder="Ej. Conéctese 10 minutos antes y ponga su nombre completo"></label>
+    <button class="btn btn-primary btn-block">Guardar</button>
+  </form>
+  ${z.enlace ? `<div class="card"><h3 style="font-size:1.05rem">Invitación de esta semana</h3>
+    <div class="compartir-txt pre small" style="margin-top:8px">${esc(mensajeZoom(z))}</div>
+    <div class="row" style="margin-top:10px"><button class="btn btn-wa" type="button" onclick="hojaCompartir('Invitación de Zoom', mensajeZoom(DATA.zoom), { editable: true })"><span class="ico">${ICON.wa}</span>Avisar</button>
+    <button class="btn btn-danger btn-sm" type="button" onclick="borrarZoom()">Quitar Zoom de la app</button></div></div>` : ''}`;
+}
+function pintarHorarios() {
+  $('#zHor').innerHTML = ZHOR.map((h, i) => `<div class="horario-fila">
+    <select onchange="ZHOR[${i}].dia=+this.value">${[1, 2, 3, 4, 5, 6, 0].map(d => `<option value="${d}" ${d === +h.dia ? 'selected' : ''}>${DIAS[d]}</option>`).join('')}</select>
+    <input type="time" value="${esc(h.hora)}" onchange="ZHOR[${i}].hora=this.value" required>
+    <button class="x" type="button" aria-label="Quitar horario" onclick="ZHOR.splice(${i},1);pintarHorarios()">✕</button></div>`).join('') || '<p class="small muted">Sin horarios.</p>';
+}
+function initZoom() { pintarHorarios(); }
+function leerPegado() {
+  const r = leerInvitacionZoom($('#zPegar').value), f = $('#fZoom');
+  const leidos = [];
+  if (r.id) { f.idReunion.value = r.id; leidos.push('ID'); }
+  if (r.codigo) { f.codigo.value = r.codigo; leidos.push('código'); }
+  if (r.enlace) { f.enlace.value = r.enlace; leidos.push('enlace'); }
+  if (r.horarios) { ZHOR = r.horarios.filter(h => h.dia >= 0); pintarHorarios(); leidos.push('horarios'); }
+  toast(leidos.length ? 'Se leyó: ' + leidos.join(', ') + '. Revise y toque Guardar.' : 'No se encontraron datos de Zoom en el texto', leidos.length ? 'ok' : 'err');
+}
+async function guardarZoom(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await post('guardarZoom', { tema: f.tema.value.trim(), id: f.idReunion.value.trim(), acceso: f.codigo.value.trim(), enlace: f.enlace.value.trim(), nota: f.nota.value.trim(), horarios: ZHOR.filter(h => h.hora) });
+    await recargarData(); toast('Zoom guardado', 'ok'); render();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function borrarZoom() {
+  if (!await confirmar('¿Quitar los datos de Zoom? Los publicadores dejarán de ver el botón para unirse.', 'Quitar')) return;
+  try { await post('guardarZoom', { borrar: true }); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ---------- Ajustes: código de la congregación ---------- */
@@ -452,13 +515,40 @@ async function quitarCodigo() {
 }
 function initTerritorios() {
   PUNTO = null;
-  AM = Mapa.crear($('#aMapa'), { onMapa: ll => ponerPunto(ll.lat, ll.lng) });
+  PUNTO_RECORDADO = false;
+  AM = Mapa.crear($('#aMapa'), { onMapa: ll => { PUNTO_RECORDADO = false; ponerPunto(ll.lat, ll.lng); } });
   const R = Mapa.resumenRegistro(DATA.registro || []);
   const col = {}; Object.values(R).forEach(t => { col[t.territorio] = t.color; });
   AM.colorear(col);
-  const sel = $('#sTerr');
-  sel.onchange = () => { AM.seleccionar(sel.value); pintarEstadoTerr(); };
-  AM.seleccionar(sel.value); pintarEstadoTerr();
+  const sel = $('#sTerr'), tipo = $('#sTipo'), punto = $('#fSal [name=punto]');
+  sel.onchange = () => { AM.seleccionar(sel.value || null); pintarEstadoTerr(); };
+  // casa en casa necesita territorio; los demás arreglos normalmente no
+  const ajustarTipo = () => {
+    sesion.set('tipo_salida', tipo.value);
+    if (tipo.value === 'casa' && !sel.value) { sel.value = Mapa.numeros()[0]; sel.onchange(); }
+    if (tipo.value !== 'casa' && sel.value && ajustarTipo.hecho) { sel.value = ''; sel.onchange(); }
+    ajustarTipo.hecho = true;
+    if (tipo.value !== 'casa' && !punto.value) punto.value = 'Salón del Reino';
+    usarPuntoGuardado();
+  };
+  tipo.onchange = ajustarTipo;
+  // días de la semana cuando se repite
+  const rep = $('#cRep'), fecha = $('#fSal [name=fecha]');
+  const marcarDiaFecha = () => { if (!$$('#diasSel input:checked').length && fecha.value) { const d = parseYmd(fecha.value).getDay(); $(`#diasSel input[value="${d}"]`).checked = true; } };
+  rep.onchange = () => { $('#diasSel').hidden = !rep.checked; if (rep.checked) marcarDiaFecha(); };
+  fecha.addEventListener('change', () => { if (rep.checked) marcarDiaFecha(); });
+  punto.addEventListener('input', usarPuntoGuardado);
+  if (tipo.value !== 'casa') sel.value = '';
+  ajustarTipo();
+  AM.seleccionar(sel.value || null); pintarEstadoTerr();
+}
+/* Lugares ya marcados en el mapa (ej. el Salón del Reino) se recuerdan en este teléfono */
+let PUNTO_RECORDADO = false;
+function usarPuntoGuardado() {
+  const t = norm($('#fSal [name=punto]').value);
+  const g = store.get('lugares', {})[t];
+  if (g && (!PUNTO || PUNTO_RECORDADO)) { ponerPunto(g.lat, g.lng); PUNTO_RECORDADO = true; AM.map.setView([g.lat, g.lng], 16); }
+  else if (!g && PUNTO_RECORDADO) { PUNTO = null; PUNTO_RECORDADO = false; AM.marcarPunto(null); $('#puntoTxt').textContent = 'Toque el mapa para marcar el punto de encuentro (opcional).'; }
 }
 function ponerPunto(lat, lng) {
   PUNTO = { lat: +lat.toFixed(6), lng: +lng.toFixed(6) };
@@ -477,8 +567,12 @@ async function guardarSalida(e) {
   const f = e.target, b = $('#bSal');
   b.disabled = true;
   try {
-    await post('guardarSalida', { fecha: f.fecha.value, hora: f.hora.value.trim(), territorio: f.territorio.value, conductor: f.conductor.value.trim(), punto: f.punto.value.trim(), nota: f.nota.value.trim(), lat: PUNTO ? PUNTO.lat : '', lng: PUNTO ? PUNTO.lng : '' });
-    await recargarData(); toast('Salida programada', 'ok'); render();
+    sesion.set('tipo_salida', f.tipo.value);
+    if (PUNTO && f.punto.value.trim()) { const l = store.get('lugares', {}); l[norm(f.punto.value)] = PUNTO; store.set('lugares', l); }
+    const dias = $$('#diasSel input:checked').map(i => i.value).join(',');
+    if (f.repetir.checked && !dias) { b.disabled = false; return toast('Elija al menos un día', 'err'); }
+    await post('guardarSalida', { tipo: f.tipo.value, repetir: f.repetir.checked ? 'semanal' : '', dias: f.repetir.checked ? dias : '', fecha: f.fecha.value, hora: f.hora.value.trim(), territorio: f.territorio.value, conductor: f.conductor.value.trim(), punto: f.punto.value.trim(), nota: f.nota.value.trim(), lat: PUNTO ? PUNTO.lat : '', lng: PUNTO ? PUNTO.lng : '' });
+    await recargarData(); toast('Arreglo programado', 'ok'); render();
   } catch (err) { toast(err.message, 'err'); b.disabled = false; }
 }
 async function borrarSalida(id) {
@@ -490,11 +584,12 @@ async function borrarPunto(id) {
   try { await post('borrarPunto', { id }); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
 }
 function compartirSalidaAdmin(id) {
-  const x = (DATA.salidas || []).find(s => s.id === id); if (!x) return;
-  const c = x.lat && x.lng ? { lat: x.lat, lng: x.lng } : Mapa.centro(x.territorio);
-  hojaCompartir('Avisar salida', `Salida a predicar — ${fmtLarga(x.fecha)}${x.hora ? ', ' + x.hora : ''}\nTerritorio ${x.territorio}` +
-    (x.conductor ? `\nConductor: ${x.conductor}` : '') + (x.punto ? `\nPunto de encuentro: ${x.punto}` : '') + (x.nota ? `\n${x.nota}` : '') +
-    (c ? `\nUbicación: ${Mapa.enlaceMapa(c.lat, c.lng)}` : '') + `\nVer el territorio: ${Mapa.enlaceApp(x.territorio)}`);
+  const x = salidasProximas(DATA.salidas).find(s => s.id === id); if (!x) return;
+  const tipo = x.tipo || 'casa';
+  hojaCompartir('Avisar: ' + tituloSalida(x), mensajeSalida(x), {
+    editable: true,
+    plantilla: texto => { const pl = store.get('plantillas', {}); pl[tipo] = aPlantilla(x, texto); store.set('plantillas', pl); }
+  });
 }
 
 /* ---------- Recordatorios ---------- */

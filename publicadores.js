@@ -173,6 +173,8 @@ function vInicio() {
   }
 
   return `
+  ${avisoReunionHoy()}
+  ${tarjetasHoy()}
   <div class="hero"><div class="k">Esta semana</div><div class="v">${esc(fmtRango(s.inicio, s.fin))}</div>
     <div class="small" style="color:#d6deea;margin-top:4px">${estaSemana ? `${estaSemana} asignaciones registradas` : 'Consulte los programas en Reuniones y Asignaciones'}</div></div>
 
@@ -194,7 +196,7 @@ function vInicio() {
     <div class="small muted">${pt.territorio ? 'Territorio ' + esc(pt.territorio) + ' · ' : ''}${esc(haceCuanto(pt.actualizado))}</div></div>
     <button class="btn btn-sm btn-primary" onclick="navegarPunto('${esc(pt.id)}')">Ir</button></div>`).join('')}</div>` : ''}
 
-  ${proxSalidas().length ? `<div class="h-sec">Próxima salida a predicar <button onclick="irA('territorios')">Ver mapa</button></div>${tarjetaSalida(proxSalidas()[0])}` : ''}
+  ${(() => { const sig = proxSalidas().filter(x => x.fecha > hoy()); return sig.length ? `<div class="h-sec">Próximo arreglo para la predicación <button onclick="irA('territorios')">Ver todos</button></div>${tarjetaSalida(sig[0])}` : ''; })()}
 
   ${eventos.length ? `<div class="h-sec">Próximos eventos <button onclick="irA('anuncios')">Ver todos</button></div>
     <div class="lista">${eventos.map(a => `<div class="item">${fechaBox(a.fecha)}<div class="grow"><div class="t">${esc(a.titulo)}</div>
@@ -219,8 +221,42 @@ function segmentos(grupo, claves) {
 }
 
 function vReuniones() {
-  return `<h1 class="titulo-vista">Reuniones</h1>${segmentos('reuniones', ['entresemana', 'discursos'])}${vistaSeccion(sub.reuniones)}`;
+  return `<h1 class="titulo-vista">Reuniones</h1>${DATA.zoom && DATA.zoom.enlace ? tarjetaZoom(DATA.zoom) : ''}${segmentos('reuniones', ['entresemana', 'discursos'])}${vistaSeccion(sub.reuniones)}`;
 }
+
+/* ---------- Zoom ---------- */
+async function copiarTexto(t, msg = 'Copiado') {
+  try { await navigator.clipboard.writeText(t); toast(msg, 'ok'); } catch (e) { hojaCompartir('Copiar', t); }
+}
+function tarjetaZoom(z) {
+  const r = reunionHoy(z);
+  return `<div class="card zoom-card">
+    <div class="row"><span class="zoom-logo">Zoom</span><h3 class="grow" style="font-size:1.05rem">Reunión por Zoom</h3>${r ? '<span class="chip ok">Hoy</span>' : ''}</div>
+    <p class="small" style="margin:8px 0 6px"><b>${esc(temaZoom(z))}</b></p>
+    <div class="small muted">${horariosOrdenados(z).map(h => `<div class="cap">${esc(textoHorario(h))}</div>`).join('')}</div>
+    <a class="btn btn-zoom btn-block" style="margin-top:12px" href="${esc(z.enlace)}" target="_blank" rel="noopener">Unirse por Zoom</a>
+    <div class="zoom-datos">
+      ${z.id ? `<div><span class="muted small">ID de reunión</span><b>${esc(z.id)}</b><button class="btn btn-sm" onclick="copiarTexto('${esc(z.id.replace(/\s/g, ''))}','ID copiado')">Copiar</button></div>` : ''}
+      ${z.codigo ? `<div><span class="muted small">Código de acceso</span><b>${esc(z.codigo)}</b><button class="btn btn-sm" data-c="${esc(z.codigo)}" onclick="copiarTexto(this.dataset.c,'Código copiado')">Copiar</button></div>` : ''}
+    </div>
+    ${z.nota ? `<p class="small pre" style="margin:8px 0 0">${esc(z.nota)}</p>` : ''}
+    <button class="btn btn-sm" style="margin-top:10px" onclick="hojaCompartir('Invitación de Zoom', mensajeZoom(DATA.zoom))">Compartir invitación</button>
+  </div>`;
+}
+function avisoReunionHoy() {
+  const z = DATA.zoom; if (!z || !z.enlace) return '';
+  const r = reunionHoy(z); if (!r) return '';
+  const cuando = r.faltan > 60 ? `Hoy a las ${fmtHora(r.h.hora)}` : r.faltan > 0 ? `Empieza en ${r.faltan} min (${fmtHora(r.h.hora)})` : 'La reunión ya comenzó';
+  return `<div class="hoy-card zoom-hoy">
+    <div class="k">Hoy hay reunión</div>
+    <h2>${esc(cuando)}</h2>
+    <div class="det">${esc(temaZoom(z))}</div>
+    <div class="row" style="margin-top:12px">
+      <a class="btn btn-w" href="${esc(z.enlace)}" target="_blank" rel="noopener">Unirse por Zoom</a>
+      <button class="btn btn-t" onclick="irA('reuniones')">ID y código</button>
+    </div></div>`;
+}
+setInterval(() => { if (DATA && vista === 'inicio' && document.visibilityState === 'visible' && reunionHoy(DATA.zoom)) render(); }, 60000);
 
 function vAsignaciones() {
   return `<h1 class="titulo-vista">Otras asignaciones</h1>${segmentos('asignaciones', ['limpieza', 'audio_video', 'acomodadores', 'predicacion'])}${vistaSeccion(sub.asignaciones)}`;
@@ -293,30 +329,49 @@ const T = { mapa: null, gps: false, pos: null, eligiendo: null, timer: null };
 let PUNTOS = [];
 let NAV = null; // navegación activa
 const misPuntos = () => store.get('mis_puntos', []);
-const proxSalidas = () => (DATA.salidas || []).filter(x => x.fecha >= hoy());
+const proxSalidas = () => salidasProximas(DATA.salidas);
+const buscarSalida = id => proxSalidas().find(x => x.id === id) || (DATA.salidas || []).find(x => x.id === id);
+const coordsSalida = x => x.lat && x.lng ? { lat: +x.lat, lng: +x.lng } : (x.territorio ? Mapa.centro(x.territorio) : null);
 
 function tarjetaSalida(x, conMapa = true) {
-  const c = x.lat && x.lng ? { lat: +x.lat, lng: +x.lng } : Mapa.centro(x.territorio);
+  const c = coordsSalida(x);
   return `<div class="card salida">
-    <div class="row"><span class="chip ok">${x.fecha === hoy() ? 'Hoy' : esc(fmtFecha(x.fecha))}</span>${x.hora ? `<span class="small muted">${esc(x.hora)}</span>` : ''}${chipNuevo('salidas', x)}</div>
-    <h3 style="font-size:1.1rem;margin-top:8px">Territorio ${esc(x.territorio)}</h3>
+    <div class="row"><span class="chip ok">${x.fecha === hoy() ? 'Hoy' : esc(fmtFecha(x.fecha))}</span>${x.hora ? `<span class="small muted">${esc(x.hora)}</span>` : ''}${x.repetir === 'semanal' ? `<span class="chip">${esc(textoRepetir(x))}</span>` : ''}${chipNuevo('salidas', x)}</div>
+    <h3 style="font-size:1.1rem;margin-top:8px">${esc(tituloSalida(x))}</h3>
     <div class="small muted cap">${esc(fmtLarga(x.fecha))}</div>
     ${x.conductor ? `<div class="small" style="margin-top:6px">Conductor: <b>${esc(x.conductor)}</b></div>` : ''}
     ${x.punto ? `<div class="small">Punto de encuentro: <b>${esc(x.punto)}</b></div>` : ''}
     ${x.nota ? `<div class="small pre" style="margin-top:4px">${esc(x.nota)}</div>` : ''}
     <div class="row" style="margin-top:10px">
       ${c ? `<button class="btn btn-sm btn-primary" onclick="navegarSalida('${esc(x.id)}')"><span class="ico">${ICON.ruta}</span>Cómo llegar</button>` : ''}
-      ${conMapa ? `<button class="btn btn-sm" onclick="verTerritorio('${esc(x.territorio)}')">Ver territorio</button>` : ''}
+      ${conMapa && x.territorio ? `<button class="btn btn-sm" onclick="verTerritorio('${esc(x.territorio)}')">Ver territorio</button>` : ''}
       <button class="btn btn-sm" onclick="compartirSalida('${esc(x.id)}')">Compartir</button>
-      ${x.fecha <= hoy() ? `<button class="btn btn-sm btn-verde" onclick="abrirRegistro('${esc(x.territorio)}','${esc(x.id)}')">Registrar cómo quedó</button>` : ''}
+      ${x.territorio && x.fecha <= hoy() ? `<button class="btn btn-sm btn-verde" onclick="abrirRegistro('${esc(x.territorio)}','${esc(x.id)}')">Registrar cómo quedó</button>` : ''}
     </div></div>`;
+}
+
+/* Tarjeta destacada con los arreglos de hoy (va arriba en Inicio) */
+function tarjetasHoy() {
+  const hoyS = proxSalidas().filter(x => x.fecha === hoy());
+  return hoyS.map(x => {
+    const c = coordsSalida(x);
+    return `<div class="hoy-card">
+      <div class="k">Hoy · arreglo para la predicación</div>
+      <h2>${esc(tituloSalida(x))}</h2>
+      <div class="det">${[x.hora, x.punto].filter(Boolean).map(esc).join(' · ')}${x.conductor ? `<br>Conductor: <b>${esc(x.conductor)}</b>` : ''}</div>
+      ${x.nota ? `<div class="det pre" style="margin-top:4px">${esc(x.nota)}</div>` : ''}
+      <div class="row" style="margin-top:12px">
+        ${c ? `<button class="btn btn-w" onclick="navegarSalida('${esc(x.id)}')"><span class="ico">${ICON.ruta}</span>Cómo llegar</button>` : ''}
+        <button class="btn btn-t" onclick="compartirSalida('${esc(x.id)}')">Compartir</button>
+      </div></div>`;
+  }).join('');
 }
 
 /* ----- Registro de territorios ----- */
 let RESUMEN = null;
 function calcularResumen() { RESUMEN = Mapa.resumenRegistro(DATA.registro || []); return RESUMEN; }
 function abrirRegistro(territorio, salidaId) {
-  const sal = salidaId ? (DATA.salidas || []).find(x => x.id === salidaId) : null;
+  const sal = salidaId ? buscarSalida(salidaId) : null;
   const d = document.createElement('div');
   d.className = 'modal';
   d.innerHTML = `<form class="modal-box" id="fReg">
@@ -384,11 +439,8 @@ function verPunto(id) {
 
 /* ----- Compartir ----- */
 function compartirSalida(id) {
-  const x = (DATA.salidas || []).find(s => s.id === id); if (!x) return;
-  const c = x.lat && x.lng ? { lat: x.lat, lng: x.lng } : Mapa.centro(x.territorio);
-  hojaCompartir('Salida a predicar', `Salida a predicar — ${fmtLarga(x.fecha)}${x.hora ? ', ' + x.hora : ''}\nTerritorio ${x.territorio}` +
-    (x.conductor ? `\nConductor: ${x.conductor}` : '') + (x.punto ? `\nPunto de encuentro: ${x.punto}` : '') +
-    (c ? `\nUbicación: ${Mapa.enlaceMapa(c.lat, c.lng)}` : '') + `\nVer el territorio: ${Mapa.enlaceApp(x.territorio)}`);
+  const x = buscarSalida(id); if (!x) return;
+  hojaCompartir(tituloSalida(x), mensajeSalida(x), { editable: true });
 }
 function compartirTerritorio(n) {
   const c = Mapa.centro(n);
@@ -521,9 +573,9 @@ function navegarPunto(id) {
   if (pt) navegarA(pt.lat, pt.lng, pt.nombre);
 }
 function navegarSalida(id) {
-  const x = (DATA.salidas || []).find(s => s.id === id); if (!x) return;
-  const c = x.lat && x.lng ? { lat: +x.lat, lng: +x.lng } : Mapa.centro(x.territorio);
-  if (c) navegarA(c.lat, c.lng, x.punto || 'Territorio ' + x.territorio);
+  const x = buscarSalida(id); if (!x) return;
+  const c = coordsSalida(x);
+  if (c) navegarA(c.lat, c.lng, x.punto || tituloSalida(x));
 }
 async function navegarA(lat, lng, nombre) {
   NAV = { destino: { lat: +lat, lng: +lng }, nombre, modo: store.get('modo_ruta', 'foot'), ruta: null, paso: 0, calc: false, ult: 0, seguir: true, llego: false };
