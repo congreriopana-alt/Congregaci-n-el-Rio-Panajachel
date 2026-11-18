@@ -258,28 +258,45 @@ const Mapa = (() => {
     distancia, rumbo, rumboTexto, fmtDist, fmtTiempo, cercaniaLinea, calcularRuta };
 })();
 
-/* Hoja para compartir un texto: WhatsApp, SMS (sirve sin internet), compartir o copiar */
-function hojaCompartir(titulo, texto) {
+/* Hoja para compartir un texto: WhatsApp, SMS (sirve sin internet), compartir o copiar.
+   opciones.editable: el texto se puede corregir antes de enviar.
+   opciones.plantilla: función que recibe el texto para guardarlo como plantilla. */
+function hojaCompartir(titulo, texto, opciones = {}) {
   const d = document.createElement('div');
   d.className = 'modal';
   const puedeShare = !!navigator.share;
   d.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true">
     <h3 style="font-size:1.05rem;margin-bottom:8px">${esc(titulo)}</h3>
-    <div class="compartir-txt pre small">${esc(texto)}</div>
+    ${opciones.editable ? '<p class="small muted" style="margin:0 0 6px">Puede corregir el mensaje antes de enviarlo.</p><textarea class="compartir-edit"></textarea>'
+      : `<div class="compartir-txt pre small">${esc(texto)}</div>`}
     <div class="grid2" style="gap:8px;margin-top:14px">
-      <a class="btn btn-wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(texto)}"><span class="ico">${ICON.wa}</span>WhatsApp</a>
-      <a class="btn" href="sms:?&body=${encodeURIComponent(texto)}">SMS (sin internet)</a>
+      <a class="btn btn-wa" data-a="wa" target="_blank" rel="noopener"><span class="ico">${ICON.wa}</span>WhatsApp</a>
+      <a class="btn" data-a="sms">SMS (sin internet)</a>
       ${puedeShare ? '<button class="btn" data-a="share">Más opciones</button>' : ''}
       <button class="btn" data-a="copiar">Copiar</button>
     </div>
+    ${opciones.plantilla ? '<button class="btn btn-block btn-sm" data-a="plantilla" style="margin-top:8px">Guardar este estilo como plantilla</button>' : ''}
     <button class="btn btn-block" data-a="cerrar" style="margin-top:8px">Cerrar</button></div>`;
+  const ta = $('.compartir-edit', d);
+  if (ta) ta.value = texto;
+  const actual = () => ta ? ta.value : texto;
+  const enlaces = () => {
+    $('[data-a=wa]', d).href = 'https://wa.me/?text=' + encodeURIComponent(actual());
+    $('[data-a=sms]', d).href = 'sms:?&body=' + encodeURIComponent(actual());
+  };
+  enlaces();
+  if (ta) ta.addEventListener('input', enlaces);
   d.addEventListener('click', async e => {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (e.target === d || a === 'cerrar') return d.remove();
-    if (a === 'share') { try { await navigator.share({ title: titulo, text: texto }); } catch (err) {} }
+    if (a === 'share') { try { await navigator.share({ title: titulo, text: actual() }); } catch (err) {} }
+    if (a === 'plantilla') { opciones.plantilla(actual()); toast('Plantilla guardada en este teléfono', 'ok'); }
     if (a === 'copiar') {
-      try { await navigator.clipboard.writeText(texto); toast('Copiado', 'ok'); }
-      catch (err) { const r = document.createRange(); r.selectNodeContents($('.compartir-txt', d)); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Seleccionado: use Copiar del teléfono'); }
+      try { await navigator.clipboard.writeText(actual()); toast('Copiado', 'ok'); }
+      catch (err) {
+        if (ta) { ta.select(); toast('Seleccionado: use Copiar del teléfono'); }
+        else { const r = document.createRange(); r.selectNodeContents($('.compartir-txt', d)); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Seleccionado: use Copiar del teléfono'); }
+      }
     }
   });
   document.body.appendChild(d);

@@ -96,15 +96,19 @@ function vSubir() {
   return `<h1 class="titulo-vista">Subir programa</h1>
   <form class="card" id="fSubir" onsubmit="subir(event)">
     <label class="f"><span>Sección</span><select name="seccion" id="sSec">${opcionesSeccion(sec)}</select></label>
+    <p class="small muted" id="ayudaPdf" style="margin:-4px 0 12px">Reunión de entre semana: si sube el <b>PDF</b> del programa, la app lo separa por semana y crea las asignaciones de cada hermano.</p>
+    <div id="camposNormales">
     <div class="grid2 resp">
       <label class="f"><span>Válido desde</span><input type="date" name="fechaInicio" id="dIni" required></label>
       <label class="f"><span>Hasta</span><input type="date" name="fechaFin" id="dFin" required></label>
     </div>
     <label class="f"><span>Título</span><input type="text" name="titulo" id="tTit" maxlength="150" required></label>
     <label class="f"><span>Nota para los publicadores (opcional)</span><textarea name="nota" maxlength="500" style="min-height:64px" placeholder="Ej. Recuerden llegar 15 minutos antes."></textarea></label>
+    </div>
     <label class="drop" id="drop"><input type="file" name="archivo" id="fArch" accept="image/*,application/pdf" required>
       <span id="dropTxt">Toque para elegir la imagen o el PDF del programa</span></label>
     <div class="preview" id="prev"></div>
+    <div id="progPrev"></div>
     <button class="btn btn-primary btn-block" id="bSubir" style="margin-top:14px">Publicar</button>
   </form>
   <p class="small muted">Las imágenes grandes se reducen automáticamente para que carguen rápido en los teléfonos.</p>`;
@@ -114,7 +118,8 @@ function initSubir() {
   tTit.dataset.auto = '1';
   const ponerFechas = () => { const r = rangoPorDefecto(sSec.value); dIni.value = r.inicio; dFin.value = r.fin; ponerTitulo(); };
   const ponerTitulo = () => { if (tTit.dataset.auto) tTit.value = `${SECCIONES[sSec.value].nombre} — ${fmtRango(dIni.value, dFin.value)}`; };
-  sSec.onchange = () => { sesion.set('ult_seccion', sSec.value); ponerFechas(); };
+  sSec.onchange = () => { sesion.set('ult_seccion', sSec.value); ponerFechas(); $('#ayudaPdf').hidden = sSec.value !== 'entresemana'; revisarPdf(); };
+  $('#ayudaPdf').hidden = sSec.value !== 'entresemana';
   dIni.onchange = dFin.onchange = ponerTitulo;
   tTit.oninput = () => { delete tTit.dataset.auto; };
   ponerFechas();
@@ -123,11 +128,78 @@ function initSubir() {
     $('#drop').classList.toggle('has', !!f);
     $('#dropTxt').textContent = f ? `✓ ${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB) · tocar para cambiar` : 'Toque para elegir la imagen o el PDF del programa';
     $('#prev').innerHTML = f && f.type.startsWith('image/') ? `<img src="${URL.createObjectURL(f)}" alt="Vista previa">` : '';
+    revisarPdf();
   };
+}
+
+/* ---------- Programa en PDF: separar por semana ---------- */
+let PROG_LEIDO = null;
+function modoPrograma(on) {
+  $('#camposNormales').hidden = on;
+  $$('#camposNormales [required]').forEach(i => { i.required = !on; i.dataset.req = '1'; });
+  if (!on) $$('#camposNormales [data-req]').forEach(i => { i.required = true; });
+}
+async function revisarPdf() {
+  const f = $('#fArch').files[0], box = $('#progPrev'), b = $('#bSubir');
+  PROG_LEIDO = null; modoPrograma(false); box.innerHTML = ''; b.textContent = 'Publicar';
+  if (!f || $('#sSec').value !== 'entresemana' || !/pdf/i.test(f.type || f.name)) return;
+  box.innerHTML = '<div class="hist">Leyendo el programa…</div>';
+  try {
+    const semanas = await Programa.desdeArchivo(f);
+    if (!semanas.length) { box.innerHTML = '<div class="hist alerta">No se reconoció el formato del programa. Se publicará como PDF normal.</div>'; return; }
+    PROG_LEIDO = semanas;
+    modoPrograma(true);
+    box.innerHTML = `<div class="card flat" style="margin-top:12px">
+      <b>Se encontraron ${semanas.length} semanas</b>
+      <p class="small muted" style="margin:4px 0 10px">Cada semana se mostrará por separado; los publicadores verán la semana actual. Si una semana ya estaba publicada, se reemplaza.</p>
+      ${semanas.map((x, i) => `<div class="item" style="padding:9px 2px">
+        <input type="checkbox" class="semSel" value="${i}" ${x.fin >= hoy() ? 'checked' : ''} aria-label="Publicar semana del ${esc(fmtFecha(x.fecha))}">
+        <div class="grow"><div class="t cap">${esc(fmtFecha(x.fecha, { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+        <div class="small muted">${esc(x.lectura)} · Presidente ${esc(x.presidente || '—')} · ${Programa.asignaciones(x).length} asignaciones</div></div>
+        <button type="button" class="btn btn-sm" onclick="verProgramaModal(PROG_LEIDO[${i}])">Ver</button></div>`).join('')}
+      <label class="small row" style="gap:8px;margin-top:10px"><input type="checkbox" id="cAsigProg" checked> Crear las asignaciones de cada hermano (Mis asignaciones, recordatorios e historial)</label>
+      <label class="small row" style="gap:8px;margin-top:6px"><input type="checkbox" id="cPdfProg"> Guardar también el PDF completo</label>
+    </div>`;
+    const contar = () => { const n = $$('.semSel:checked').length; b.textContent = n ? `Publicar ${n} semana${n === 1 ? '' : 's'}` : 'Elija al menos una semana'; };
+    $$('.semSel').forEach(c => c.onchange = contar); contar();
+  } catch (err) {
+    box.innerHTML = `<div class="hist alerta">No se pudo leer el PDF (${esc(err.message)}). Se publicará como PDF normal.</div>`;
+  }
+}
+function verProgramaModal(sem) {
+  const d = document.createElement('div');
+  d.className = 'modal';
+  d.innerHTML = `<div class="modal-box modal-ancho">${Programa.html(sem)}<button class="btn btn-block" style="margin-top:10px">Cerrar</button></div>`;
+  d.addEventListener('click', e => { if (e.target === d || e.target.closest('button')) d.remove(); });
+  document.body.appendChild(d);
+}
+async function publicarPrograma(b) {
+  const sel = $$('.semSel:checked').map(c => PROG_LEIDO[+c.value]);
+  if (!sel.length) return toast('Elija al menos una semana', 'err');
+  const conAsig = $('#cAsigProg').checked, conPdf = $('#cPdfProg').checked;
+  b.disabled = true; b.textContent = 'Publicando…';
+  try {
+    const r = await post('guardarProgramas', {
+      programas: sel.map(x => ({ fecha: x.fecha, inicio: x.inicio, fin: x.fin, lectura: x.lectura, presidente: x.presidente, items: x.items })),
+      conAsignaciones: conAsig, asignaciones: conAsig ? sel.flatMap(Programa.asignaciones) : []
+    });
+    if (conPdf) {
+      const arch = await prepararArchivo($('#fArch').files[0]);
+      const ini = sel.map(x => x.inicio).sort()[0], fin = sel.map(x => x.fin).sort().pop();
+      await post('subir', { seccion: 'entresemana', titulo: `Programa completo — ${fmtRango(ini, fin)}`, fechaInicio: ini, fechaFin: fin, nota: '', ...arch });
+    }
+    ASIG = null; HIST = null; await recargarData();
+    toast('Programa publicado', 'ok');
+    $('#app').innerHTML = `<div class="card" style="text-align:center">
+      <h2 style="font-size:1.15rem">✓ ${r.semanas} semana${r.semanas === 1 ? '' : 's'} publicada${r.semanas === 1 ? '' : 's'}</h2>
+      <p class="muted small">${conAsig ? `Se crearon ${r.asignaciones} asignaciones: cada hermano ya las ve en "Mis asignaciones" y recibirá su recordatorio el lunes.` : 'No se crearon asignaciones.'}</p>
+      <div class="row" style="justify-content:center"><button class="btn" onclick="irA('publicado')">Ver lo publicado</button><button class="btn" onclick="render()">Subir otro</button></div></div>`;
+  } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'Publicar'; }
 }
 async function subir(e) {
   e.preventDefault();
   const f = e.target, b = $('#bSubir');
+  if (PROG_LEIDO) return publicarPrograma(b);
   if (f.fechaFin.value < f.fechaInicio.value) return toast('La fecha "hasta" es antes de "desde"', 'err');
   b.disabled = true; b.textContent = 'Subiendo…';
   try {
@@ -146,15 +218,24 @@ async function subir(e) {
 
 /* ---------- Publicado ---------- */
 function vPublicado() {
-  const pubs = DATA.publicaciones;
-  if (!pubs.length) return `<h1 class="titulo-vista">Publicado</h1><div class="empty">Aún no hay programas.</div>`;
-  return `<h1 class="titulo-vista">Publicado</h1>${Object.keys(SECCIONES).map(sec => {
+  const pubs = DATA.publicaciones, progs = DATA.programas || [];
+  if (!pubs.length && !progs.length) return `<h1 class="titulo-vista">Publicado</h1><div class="empty">Aún no hay programas.</div>`;
+  return `<h1 class="titulo-vista">Publicado</h1>
+  ${progs.length ? `<div class="h-sec">Reunión de entre semana · por semana</div><div class="lista">${progs.map(x => `<div class="item">
+      <div class="grow" style="cursor:pointer" onclick="verProgramaModal((DATA.programas||[]).find(p=>p.id==='${esc(x.id)}'))"><div class="t cap">${esc(fmtFecha(x.fecha, { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+      <div class="small muted">${esc(x.lectura)} · Presidente ${esc(x.presidente || '—')}${x.inicio <= hoy() && x.fin >= hoy() ? ' · <b style="color:var(--ok)">esta semana</b>' : ''}</div></div>
+      <button class="x" aria-label="Eliminar semana" onclick="borrarPrograma('${esc(x.id)}')">✕</button></div>`).join('')}</div>` : ''}
+  ${Object.keys(SECCIONES).map(sec => {
     const l = pubs.filter(p => p.seccion === sec); if (!l.length) return '';
     return `<div class="h-sec">${esc(SECCIONES[sec].nombre)}</div><div class="lista">${l.map(p => `<div class="item">
       <div class="grow" style="cursor:pointer" onclick="abrirVisor(DATA.publicaciones.find(x=>x.id==='${esc(p.id)}'))">
         <div class="t">${esc(p.titulo)}</div><div class="small muted">${esc(fmtRango(p.fechaInicio, p.fechaFin))} ${vigente(p) ? '· <b style="color:var(--ok)">vigente</b>' : ''}${esPdf(p) ? ' · PDF' : ''}</div></div>
       <button class="x" title="Eliminar" aria-label="Eliminar" onclick="borrarPub('${esc(p.id)}')">✕</button></div>`).join('')}</div>`;
   }).join('')}`;
+}
+async function borrarPrograma(id) {
+  if (!await confirmar('¿Eliminar esta semana del programa? También se borran las asignaciones que se crearon con ella.')) return;
+  try { await post('borrarPrograma', { id }); ASIG = null; HIST = null; await recargarData(); render(); toast('Eliminado'); } catch (e) { toast(e.message, 'err'); }
 }
 async function borrarPub(id) {
   const p = DATA.publicaciones.find(x => x.id === id);

@@ -76,7 +76,8 @@ function itemsDe(k) {
   if (!DATA) return [];
   if (k === 'anuncios') return DATA.anuncios;
   if (k === 'salidas') return DATA.salidas || [];
-  return [...DATA.publicaciones.filter(p => p.seccion === k), ...DATA.asignaciones.filter(a => a.seccion === k)];
+  return [...DATA.publicaciones.filter(p => p.seccion === k), ...DATA.asignaciones.filter(a => a.seccion === k),
+    ...(k === 'entresemana' ? (DATA.programas || []) : [])];
 }
 const hayNuevo = k => itemsDe(k).some(x => (x.creado || '') > (VISTO[k] || ''));
 const esNuevo = (k, x) => (x.creado || '') > (k in PREV ? PREV[k] : (VISTO[k] || ''));
@@ -175,8 +176,10 @@ function vInicio() {
   return `
   ${avisoReunionHoy()}
   ${tarjetasHoy()}
-  <div class="hero"><div class="k">Esta semana</div><div class="v">${esc(fmtRango(s.inicio, s.fin))}</div>
-    <div class="small" style="color:#d6deea;margin-top:4px">${estaSemana ? `${estaSemana} asignaciones registradas` : 'Consulte los programas en Reuniones y Asignaciones'}</div></div>
+  ${(() => { const pg = programaDeEstaSemana(); const dpg = pg ? parseYmd(pg.fecha) : null;
+    return `<div class="hero" ${pg ? `role="button" tabindex="0" style="cursor:pointer" onclick="sub.reuniones='entresemana';semIdx=null;irA('reuniones')"` : ''}><div class="k">Esta semana</div><div class="v">${esc(fmtRango(s.inicio, s.fin))}</div>
+    <div class="small" style="color:#d6deea;margin-top:4px">${pg ? `Reunión del ${DIAS[dpg.getDay()]} ${dpg.getDate()}: ${esc(pg.lectura)}${pg.presidente ? ' · Presidente ' + esc(pg.presidente) : ''} · <u>ver programa</u>`
+      : estaSemana ? `${estaSemana} asignaciones registradas` : 'Consulte los programas en Reuniones y Asignaciones'}</div></div>`; })()}
 
   ${esIOS && !esInstalada && !store.get('ios_ok') ? `<div class="card flat small">Para instalar en iPhone: toque <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. <button class="btn btn-sm" style="margin-left:6px" onclick="store.set('ios_ok',1);render()">Entendido</button></div>` : ''}
 
@@ -209,10 +212,36 @@ function vInicio() {
 function vistaSeccion(seccion) {
   const pubs = DATA.publicaciones.filter(p => p.seccion === seccion);
   pubs.sort((a, b) => (vigente(b) - vigente(a)) || (b.fechaInicio || '').localeCompare(a.fechaInicio || ''));
-  const asig = DATA.asignaciones.filter(a => a.seccion === seccion && a.fecha >= hoy());
+  const conPrograma = seccion === 'entresemana' && (DATA.programas || []).length;
+  const asig = conPrograma ? [] : DATA.asignaciones.filter(a => a.seccion === seccion && a.fecha >= hoy());
   return `
-    ${pubs.length ? pubs.map(p => tarjetaPub(p)).join('') : `<div class="empty">Todavía no hay programa publicado de ${esc(SECCIONES[seccion].nombre.toLowerCase())}.</div>`}
+    ${conPrograma ? bloquePrograma() : ''}
+    ${pubs.length ? `${conPrograma ? '<div class="h-sec">Archivos</div>' : ''}${pubs.map(p => tarjetaPub(p)).join('')}`
+      : conPrograma ? '' : `<div class="empty">Todavía no hay programa publicado de ${esc(SECCIONES[seccion].nombre.toLowerCase())}.</div>`}
     ${asig.length ? `<div class="h-sec">Próximas asignaciones</div>${listaAsignaciones(asig, store.get('mi_nombre', ''))}` : ''}`;
+}
+
+/* Programa de entre semana separado por semana (se abre en la semana actual) */
+let semIdx = null;
+function programaActualIdx() {
+  const ps = DATA.programas || [], h = hoy();
+  let i = ps.findIndex(p => p.inicio <= h && p.fin >= h);
+  if (i < 0) i = ps.findIndex(p => p.fin >= h);
+  return i < 0 ? ps.length - 1 : i;
+}
+function programaDeEstaSemana() { const ps = DATA.programas || [], h = hoy(); return ps.find(p => p.inicio <= h && p.fin >= h) || null; }
+function bloquePrograma() {
+  const ps = DATA.programas || [];
+  if (semIdx == null || semIdx >= ps.length) semIdx = programaActualIdx();
+  const p = ps[semIdx];
+  const actual = p.inicio <= hoy() && p.fin >= hoy();
+  return `<div class="pg-nav">
+      <button class="btn btn-sm" ${semIdx <= 0 ? 'disabled' : ''} onclick="semIdx--;render()" aria-label="Semana anterior">‹ Anterior</button>
+      <div class="pg-nav-c"><b>${esc(fmtRango(p.inicio, p.fin))}</b>${actual ? '<span class="chip ok">Esta semana</span>' : p.fin < hoy() ? '<span class="chip">Pasada</span>' : ''}${chipNuevo('entresemana', p)}</div>
+      <button class="btn btn-sm" ${semIdx >= ps.length - 1 ? 'disabled' : ''} onclick="semIdx++;render()" aria-label="Semana siguiente">Siguiente ›</button>
+    </div>
+    ${Programa.html(p, store.get('mi_nombre', ''))}
+    ${store.get('mi_nombre', '') ? '' : '<p class="small muted">Consejo: escriba su nombre en Inicio → Mis asignaciones y aparecerá resaltado en el programa.</p>'}`;
 }
 
 function segmentos(grupo, claves) {

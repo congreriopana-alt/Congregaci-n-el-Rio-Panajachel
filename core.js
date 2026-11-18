@@ -144,6 +144,7 @@ const Demo = (() => {
         ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre),
         puntos: puntosActivos(),
         zoom: st.zoom || null,
+        programas: (st.programas ||= []).filter(x => x.fin >= addDias(h, -14)).sort((a, b) => a.fecha.localeCompare(b.fecha)),
         registro: (st.registro ||= []).filter(x => x.fecha >= addDias(h, -730)),
         salidas: (st.salidas ||= []).filter(x => x.repetir === 'semanal' || x.fecha >= addDias(h, -1)).sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
       }));
@@ -194,6 +195,23 @@ const Demo = (() => {
         return f;
       }
       case 'ajustes': return { codigo: st.codigo || '' };
+      case 'guardarProgramas': {
+        const fechas = (p.programas || []).map(x => x.fecha);
+        st.programas = (st.programas || []).filter(x => !fechas.includes(x.fecha));
+        const ahora = new Date().toISOString();
+        p.programas.forEach(x => st.programas.push({ id: uid(), fecha: x.fecha, inicio: x.inicio, fin: x.fin, lectura: x.lectura, presidente: x.presidente, items: x.items, creado: ahora }));
+        let n = 0;
+        if (p.conAsignaciones) {
+          st.asignaciones = st.asignaciones.filter(a => !(a.origen === 'programa' && fechas.includes(a.fecha)));
+          (p.asignaciones || []).filter(a => fechas.includes(a.fecha)).forEach(a => { st.asignaciones.push({ id: uid(), ...a, seccion: 'entresemana', creado: ahora, origen: 'programa' }); n++; });
+        }
+        guardar(); return { semanas: fechas.length, asignaciones: n };
+      }
+      case 'borrarPrograma': {
+        const x = (st.programas || []).find(q => q.id === p.id);
+        if (x) { st.programas = st.programas.filter(q => q.id !== p.id); st.asignaciones = st.asignaciones.filter(a => !(a.origen === 'programa' && a.fecha === x.fecha)); guardar(); }
+        return true;
+      }
       case 'guardarZoom': {
         if (p.borrar) { st.zoom = null; guardar(); return null; }
         if (p.enlace && !/^https:\/\/([\w-]+\.)*zoom\.us\//i.test(p.enlace)) throw new Error('El enlace debe ser de zoom.us');

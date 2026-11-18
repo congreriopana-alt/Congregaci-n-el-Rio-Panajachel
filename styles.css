@@ -263,3 +263,21 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .dias-sel input { margin: 0; }
 .dias-sel label:has(input:checked) { background: var(--navy); color: #fff; border-color: var(--navy); }
 .horario-fila { display: grid; grid-template-columns: 1.3fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+/* Programa por semana */
+.pg-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.pg-nav-c { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: .95rem; }
+.programa { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 14px; font-size: .92rem; }
+.pg-cab { display: flex; justify-content: space-between; gap: 12px; padding: 14px; border-bottom: 2px solid var(--ink); }
+.pg-fecha { font-weight: 800; font-size: 1.12rem; }
+.pg-fecha::first-letter { text-transform: uppercase; }
+.pg-lectura { font-weight: 700; color: var(--muted); font-size: .9rem; }
+.pg-sec { color: #fff; font-weight: 800; font-size: .82rem; letter-spacing: .04em; text-transform: uppercase; padding: 7px 14px; }
+.pg-fila { display: flex; justify-content: space-between; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line); line-height: 1.35; }
+.pg-sec + .pg-fila { border-top: 0; }
+.pg-fila small, .pg-quien small { color: var(--muted); font-size: .78rem; }
+.pg-quien { text-align: right; font-weight: 600; flex: 0 0 auto; max-width: 48%; }
+.pg-quien small { display: block; font-weight: 500; }
+.pg-cancion span:first-child { font-style: italic; color: #39424d; }
+.pg-texto { color: var(--muted); font-size: .86rem; }
+.yo-nombre { background: #ffe58f; border-radius: 4px; padding: 0 3px; }
+.modal-ancho { max-width: 560px; max-height: 88vh; overflow: auto; padding: 10px; }
