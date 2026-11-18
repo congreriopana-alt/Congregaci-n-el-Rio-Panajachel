@@ -196,7 +196,7 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .chips-t { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; }
 .chips-t button { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 9px 0; font-weight: 700; cursor: pointer; color: var(--navy); }
 .chips-t button.on { background: var(--gold); border-color: var(--gold); color: #2a2104; }
-.chips-t button.prox { box-shadow: inset 0 -3px 0 var(--ok); }
+.chips-t button.prox { outline: 2px solid #1a73e8; outline-offset: 1px; }
 .salida { border-left: 4px solid var(--ok); }
 .compartir-txt { background: #f6f3ee; border-radius: 10px; padding: 10px 12px; max-height: 180px; overflow: auto; }
 .leaflet-container { font: inherit; }
@@ -218,3 +218,23 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .btn-verde { background: #1f8f4e; border-color: #1f8f4e; color: #fff; }
 #navPanel, #tMapa, #tPuntos { scroll-margin-top: 84px; }
 .grid2 > .btn { min-height: 52px; line-height: 1.2; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: var(--muted); margin: -4px 2px 12px; }
+.leyenda span { display: inline-flex; align-items: center; gap: 5px; }
+.leyenda i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.estado-t { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; font-size: .85rem; }
+.estado-t i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.seg-mini { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg-mini button { border: 0; background: var(--surface); padding: 10px 14px; cursor: pointer; font-weight: 600; }
+.seg-mini button.on { background: var(--navy); color: #fff; }
+/* Avisos de nuevo */
+.dot-nuevo { position: absolute; top: 6px; right: calc(50% - 18px); width: 9px; height: 9px; border-radius: 50%; background: #d93025; border: 2px solid var(--surface); }
+.tabs button { position: relative; }
+.seg button { position: relative; }
+.seg .dot-nuevo { top: 2px; right: 2px; }
+.chip.nuevo { --c: #d93025; }
+@media (min-width: 800px) { .dot-nuevo { top: 4px; right: 8px; } }
+/* Código de la congregación */
+.codigo-pant { max-width: 380px; margin: 10vh auto 0; text-align: center; }
+.codigo-pant input { text-align: center; font-size: 1.2rem; letter-spacing: .08em; }
+.hist { font-size: .84rem; margin-top: -6px; margin-bottom: 12px; padding: 9px 12px; border-radius: 10px; background: #f1ece2; }
+.hist.alerta { background: #fff4d6; }

@@ -51,10 +51,12 @@ const Mapa = (() => {
 
     const capas = {};
     let seleccionado = null;
+    let colores = null; // si hay registro: color según el tiempo sin predicar
+    const colorDe = n => (colores && colores[n]) || (colores ? ESTADOS.sin.color : COLORES[Number(n) % COLORES.length]);
     const estilo = (n, sel) => ({
-      color: sel ? '#c9a227' : COLORES[Number(n) % COLORES.length],
+      color: sel ? '#c9a227' : colorDe(n),
       weight: sel ? 4 : 2, opacity: .95,
-      fillColor: COLORES[Number(n) % COLORES.length], fillOpacity: sel ? .28 : .12
+      fillColor: colorDe(n), fillOpacity: sel ? .32 : (colores ? .26 : .12)
     });
     const grupo = L.geoJSON(GEO, {
       style: f => estilo(f.properties.numero, false),
@@ -112,6 +114,10 @@ const Mapa = (() => {
       capas[n].setStyle(estilo(n, true)); capas[n].bringToFront();
       if (acercar) map.fitBounds(capas[n].getBounds(), { padding: [24, 24], maxZoom: 18 });
     }
+    function colorear(mapa) {
+      colores = mapa;
+      Object.keys(capas).forEach(n => capas[n].setStyle(estilo(n, String(n) === String(seleccionado))));
+    }
     function verTodos() { seleccionar(null); map.fitBounds(grupo.getBounds(), { padding: [12, 12] }); }
 
     /* Marcador de punto (punto de encuentro) */
@@ -150,10 +156,38 @@ const Mapa = (() => {
     }
 
     setTimeout(() => map.invalidateSize(), 60);
-    return { map, seleccionar, verTodos, marcarPunto, seguirme, detener, ponerPuntos, mostrarRuta, marcarDestino, limpiarRuta,
+    return { map, seleccionar, verTodos, colorear, marcarPunto, seguirme, detener, ponerPuntos, mostrarRuta, marcarDestino, limpiarRuta,
       centrarEn(lat, lng, z) { map.setView([lat, lng], z || Math.max(map.getZoom(), 17)); },
       destruir() { detener(); map.remove(); } };
   }
+
+  /* Registro de territorios: cuánto tiempo lleva cada uno sin predicarse completo */
+  const ESTADOS = {
+    reciente: { color: '#2f8a4f', texto: 'Predicado hace menos de 4 meses' },
+    medio: { color: '#d4a017', texto: 'Entre 4 y 8 meses' },
+    viejo: { color: '#c0392b', texto: 'Más de 8 meses' },
+    sin: { color: '#8a8f98', texto: 'Sin registro todavía' }
+  };
+  function resumenRegistro(registro) {
+    const r = {};
+    numeros().forEach(n => { r[n] = { territorio: n, ultimoCompleto: null, ultimo: null, enProgreso: false, historial: [] }; });
+    [...(registro || [])].sort((a, b) => a.fecha.localeCompare(b.fecha)).forEach(x => {
+      const t = r[x.territorio]; if (!t) return;
+      t.historial.push(x);
+      t.ultimo = x;
+      if (x.estado === 'completo') { t.ultimoCompleto = x; t.enProgreso = false; } else t.enProgreso = true;
+    });
+    const hoyD = parseYmd(hoy());
+    Object.values(r).forEach(t => {
+      t.dias = t.ultimoCompleto ? Math.round((hoyD - parseYmd(t.ultimoCompleto.fecha)) / 864e5) : null;
+      t.estado = t.dias == null ? 'sin' : t.dias <= 120 ? 'reciente' : t.dias <= 240 ? 'medio' : 'viejo';
+      t.color = ESTADOS[t.estado].color;
+      t.historial.reverse();
+    });
+    return r;
+  }
+  const textoDias = d => d == null ? 'nunca registrado como completo' : d === 0 ? 'hoy' : d < 31 ? `hace ${d} días` : `hace ${Math.round(d / 30.4)} meses`;
+  const leyenda = () => `<div class="leyenda">${Object.values(ESTADOS).map(e => `<span><i style="background:${e.color}"></i>${e.texto}</span>`).join('')}</div>`;
 
   /* Geometría */
   const R = 6371000, rad = d => d * Math.PI / 180;
@@ -220,6 +254,7 @@ const Mapa = (() => {
   const enlaceApp = n => `${location.origin}${location.pathname.replace(/ancianos\.html$/, '')}#territorio-${n}`;
 
   return { territorios, numeros, buscar, territorioDe, centro, crear, enlaceMapa, enlaceRuta, enlaceApp,
+    ESTADOS, resumenRegistro, textoDias, leyenda,
     distancia, rumbo, rumboTexto, fmtDist, fmtTiempo, cercaniaLinea, calcularRuta };
 })();
 

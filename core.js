@@ -76,30 +76,24 @@ const urlOriginal = it => it.url || (it.archivoId ? `https://drive.google.com/fi
 const vigente = p => { const h = hoy(); return (!p.fechaInicio || p.fechaInicio <= h) && (!p.fechaFin || p.fechaFin >= h); };
 
 /* ---------- Conexión ---------- */
+/* Todas las solicitudes llevan el código de la congregación (publicadores)
+   o la contraseña (ancianos). */
+class ErrorCodigo extends Error { constructor(m) { super(m); this.codigo = true; } }
 const API = {
-  async get() {
-    if (DEMO) return Demo.handle('data', {});
-    const r = await fetch(CFG.API_URL + '?action=data&t=' + Date.now(), { cache: 'no-store' });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Error del servidor');
-    return j.data;
-  },
-  async puntos() {
-    if (DEMO) return Demo.handle('puntos', {});
-    const r = await fetch(CFG.API_URL + '?action=puntos&t=' + Date.now(), { cache: 'no-store' });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Error del servidor');
-    return j.data;
-  },
+  clave: '',
+  credenciales() { return { codigo: store.get('codigo', ''), password: API.clave || '' }; },
+  async get() { return API.post('data'); },
+  async puntos() { return API.post('puntos'); },
   async post(action, payload = {}) {
-    if (DEMO) return Demo.handle(action, payload);
+    const cuerpo = { ...API.credenciales(), ...payload, action };
+    if (DEMO) return Demo.handle(action, cuerpo);
     const r = await fetch(CFG.API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...payload })
+      body: JSON.stringify(cuerpo)
     });
     const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Error del servidor');
+    if (!j.ok) throw j.codigo ? new ErrorCodigo(j.error) : new Error(j.error || 'Error del servidor');
     return j.data;
   }
 };
@@ -125,7 +119,7 @@ const Demo = (() => {
   // Sin datos de ejemplo: todo lo sube el cuerpo de ancianos.
   const semilla = () => ({
     password: 'rio2026', publicaciones: [], anuncios: [], asignaciones: [],
-    hermanos: [], ancianos: [], preguntas: [], salidas: []
+    hermanos: [], ancianos: [], preguntas: [], salidas: [], registro: [], codigo: ''
   });
   let st = store.get(KEY, null) || semilla();
   const guardar = () => { if (!store.set(KEY, st)) console.warn('Demo: no se pudo guardar (archivo grande); queda solo en esta sesión.'); };
@@ -138,6 +132,9 @@ const Demo = (() => {
   async function handle(action, p) {
     await espera(action === 'subir' ? 700 : 200);
     const h = hoy();
+    const PUBLICAS = ['data', 'puntos', 'marcarPunto', 'quitarPunto', 'enviarPregunta', 'misPreguntas', 'registrarTerritorio'];
+    if (PUBLICAS.includes(action) && st.codigo && norm(p.codigo) !== norm(st.codigo) && p.password !== st.password)
+      throw new ErrorCodigo('Código de la congregación incorrecto');
     switch (action) {
       case 'data': return JSON.parse(JSON.stringify({
         congregacion: CFG.CONGREGACION,
@@ -146,6 +143,7 @@ const Demo = (() => {
         asignaciones: st.asignaciones.filter(a => a.fecha >= addDias(h, -7)).sort((a, b) => a.fecha.localeCompare(b.fecha)),
         ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre),
         puntos: puntosActivos(),
+        registro: (st.registro ||= []).filter(x => x.fecha >= addDias(h, -730)),
         salidas: (st.salidas ||= []).filter(x => x.fecha >= addDias(h, -1)).sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
       }));
       case 'enviarPregunta': {
@@ -162,6 +160,11 @@ const Demo = (() => {
         guardar(); return { id: x.id };
       }
       case 'quitarPunto': st.puntos = (st.puntos || []).filter(q => !(q.id === p.id && q.dispositivo === p.dispositivo)); guardar(); return true;
+      case 'registrarTerritorio': {
+        if (!p.conductor) throw new Error('Escriba el nombre del conductor');
+        const o = { id: uid(), territorio: String(p.territorio), fecha: p.fecha, estado: p.estado === 'completo' ? 'completo' : 'parcial', conductor: p.conductor, nota: p.nota || '', creado: new Date().toISOString() };
+        (st.registro ||= []).push(o); guardar(); return o;
+      }
       case 'misPreguntas': return st.preguntas.filter(x => (p.ids || []).includes(x.id));
     }
     admin(p);
@@ -177,9 +180,19 @@ const Demo = (() => {
         st.anuncios.push(o); guardar(); return o;
       }
       case 'guardarSalida': {
-        const o = { id: p.id || uid(), fecha: p.fecha, hora: p.hora || '', territorio: String(p.territorio), conductor: p.conductor || '', punto: p.punto || '', lat: p.lat || '', lng: p.lng || '', nota: p.nota || '' };
+        const o = { id: p.id || uid(), fecha: p.fecha, hora: p.hora || '', territorio: String(p.territorio), conductor: p.conductor || '', punto: p.punto || '', lat: p.lat || '', lng: p.lng || '', nota: p.nota || '', creado: new Date().toISOString() };
         st.salidas = (st.salidas || []).filter(x => x.id !== o.id); st.salidas.push(o); guardar(); return o;
       }
+      case 'borrarRegistro': st.registro = (st.registro || []).filter(x => x.id !== p.id); guardar(); return true;
+      case 'registroCompleto': return [...(st.registro || [])].sort((a, b) => b.fecha.localeCompare(a.fecha));
+      case 'historial': {
+        const desde = addDias(h, -365);
+        const f = st.asignaciones.filter(a => a.fecha >= desde).map(a => ({ fecha: a.fecha, asignacion: a.asignacion, seccion: a.seccion, hermano: a.hermano }));
+        (st.salidas || []).filter(x => x.conductor && x.fecha >= desde).forEach(x => f.push({ fecha: x.fecha, asignacion: 'Conductor de la salida · Territorio ' + x.territorio, seccion: 'predicacion', hermano: x.conductor }));
+        return f;
+      }
+      case 'ajustes': return { codigo: st.codigo || '' };
+      case 'guardarCodigo': st.codigo = String(p.codigo || '').trim(); guardar(); return { codigo: st.codigo };
       case 'borrarPunto': st.puntos = (st.puntos || []).filter(q => q.id !== p.id); guardar(); return true;
       case 'borrarSalida': st.salidas = (st.salidas || []).filter(x => x.id !== p.id); guardar(); return true;
       case 'borrarAnuncio': st.anuncios = st.anuncios.filter(x => x.id !== p.id); guardar(); return true;
@@ -187,7 +200,7 @@ const Demo = (() => {
       case 'agregarAsignaciones': {
         const out = [];
         (p.items || []).forEach(it => String(it.hermano).split('/').map(s => s.trim()).filter(Boolean).forEach(n => {
-          const o = { id: uid(), fecha: it.fecha, seccion: it.seccion, asignacion: it.asignacion, hermano: n };
+          const o = { id: uid(), fecha: it.fecha, seccion: it.seccion, asignacion: it.asignacion, hermano: n, creado: new Date().toISOString() };
           st.asignaciones.push(o); out.push(o);
         }));
         guardar(); return out;

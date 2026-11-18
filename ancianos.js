@@ -5,8 +5,9 @@ let vista = sesion.get('vista', 'subir');
 let recSemana = 0, filtroAsig = '';
 const VISTAS = [
   ['subir', 'Subir programa'], ['publicado', 'Publicado'], ['anuncios', 'Anuncios'],
-  ['asignaciones', 'Asignaciones'], ['territorios', 'Territorios'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos']
+  ['asignaciones', 'Asignaciones'], ['territorios', 'Territorios'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos'], ['ajustes', 'Ajustes']
 ];
+let HIST = null;
 if (DEMO) $('#demoBanner').hidden = false;
 if (CFG.CONGREGACION) $('#subBrand').textContent = CFG.CONGREGACION;
 
@@ -39,9 +40,10 @@ async function entrar(e) {
     iniciar();
   } catch (err) { PASS = ''; vLogin(err.message); }
 }
-function salir() { PASS = ''; sesion.del('pass'); store.del('pass'); vLogin(); }
+function salir() { PASS = ''; API.clave = ''; sesion.del('pass'); store.del('pass'); vLogin(); }
 
 async function iniciar() {
+  API.clave = PASS;
   $('#tabs').hidden = false; $('#btnSalir').hidden = false;
   $('#tabs').innerHTML = VISTAS.map(([k, t]) => `<button data-v="${k}">${t}<span class="badge" data-badge="${k}" hidden></span></button>`).join('');
   $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) irA(b.dataset.v); };
@@ -70,10 +72,11 @@ async function render() {
     if (vista === 'subir') app.innerHTML = vSubir(), initSubir();
     else if (vista === 'publicado') app.innerHTML = vPublicado();
     else if (vista === 'anuncios') app.innerHTML = vAnuncios();
-    else if (vista === 'asignaciones') { if (!ASIG) { app.innerHTML = '<div class="skeleton"></div>'; ASIG = await post('listarAsignaciones'); HER ||= await post('listarHermanos'); } app.innerHTML = vAsignaciones(); }
+    else if (vista === 'asignaciones') { if (!ASIG || !HIST) { app.innerHTML = '<div class="skeleton"></div>'; ASIG ||= await post('listarAsignaciones'); HER ||= await post('listarHermanos'); HIST ||= await post('historial'); } app.innerHTML = vAsignaciones(); }
+    else if (vista === 'ajustes') { app.innerHTML = '<div class="skeleton"></div>'; app.innerHTML = vAjustes(await post('ajustes')); }
     else if (vista === 'hermanos') { if (!HER) { app.innerHTML = '<div class="skeleton"></div>'; HER = await post('listarHermanos'); } app.innerHTML = vHermanos(); }
     else if (vista === 'preguntas') app.innerHTML = vPreguntas();
-    else if (vista === 'territorios') { app.innerHTML = '<div class="skeleton"></div>'; await Mapa.territorios(); HER ||= await post('listarHermanos'); app.innerHTML = vTerritorios(); initTerritorios(); }
+    else if (vista === 'territorios') { app.innerHTML = '<div class="skeleton"></div>'; await Mapa.territorios(); HER ||= await post('listarHermanos'); HIST ||= await post('historial'); app.innerHTML = vTerritorios(); initTerritorios(); }
     else if (vista === 'recordatorios') { app.innerHTML = '<div class="skeleton"></div>'; REC = await post('recordatorios', { semana: recSemana }); app.innerHTML = vRecordatorios(); }
   } catch (e) { app.innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`; }
 }
@@ -205,11 +208,16 @@ function vAsignaciones() {
       <label class="f"><span>Fecha</span><input type="date" name="fecha" required value="${esc(sesion.get('asig_fecha', ''))}"></label>
     </div>
     <label class="f"><span>Asignación</span><input type="text" name="asignacion" list="dlAsig" required maxlength="150" placeholder="Ej. Lectura de la Biblia"></label>
-    <label class="f"><span>Hermano(s) — si son dos, sepárelos con /</span><input type="text" name="hermano" list="dlHer" required maxlength="160" placeholder="Ej. Elsa de Yax / Mercy de Caná"></label>
+    <label class="f"><span>Hermano(s) — si son dos, sepárelos con /</span><input type="text" name="hermano" list="dlHer" required maxlength="160" placeholder="Ej. Elsa de Yax / Mercy de Caná" oninput="$('#histHer').innerHTML=infoHermano(this.value)"></label>
+    <div id="histHer"></div>
     <datalist id="dlAsig">${sugerencias(sec)}</datalist>
     <datalist id="dlHer">${(HER || []).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist>
     <button class="btn btn-primary btn-block" id="bAsig">Agregar</button>
   </form>
+  <details class="card">
+    <summary>¿A quién le toca? Más tiempo sin asignación</summary>
+    ${tablaEquilibrio()}
+  </details>
   <details class="card">
     <summary>Agregar varias a la vez</summary>
     <p class="small muted">Una por línea: <code class="k">fecha ; asignación ; hermano</code>. La fecha puede ser 21/11 o 21/11/2026. Se usa la sección elegida arriba.</p>
@@ -224,6 +232,54 @@ function vAsignaciones() {
     : '<div class="empty">No hay asignaciones próximas registradas.</div>'}`;
 }
 const sugerencias = sec => (SUGERENCIAS_ASIGNACION[sec] || []).map(s => `<option value="${esc(s)}">`).join('');
+/* ---------- Historial por hermano ---------- */
+function historialDe(nombre) {
+  const n = norm(nombre);
+  return (HIST || []).filter(h => norm(h.hermano) === n).sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+function textoHace(fecha) {
+  const d = Math.round((parseYmd(hoy()) - parseYmd(fecha)) / 864e5);
+  return d === 0 ? 'hoy' : d > 0 ? `hace ${d} día${d === 1 ? '' : 's'}` : `en ${-d} día${d === -1 ? '' : 's'}`;
+}
+function infoHermano(valor) {
+  const nombres = String(valor || '').split('/').map(x => x.trim()).filter(x => x.length >= 3);
+  if (!nombres.length || !HIST) return '';
+  return nombres.map(n => {
+    const h = historialDe(n);
+    if (!h.length) return `<div class="hist"><b>${esc(n)}</b>: sin asignaciones registradas en el último año.</div>`;
+    const pasadas = h.filter(x => x.fecha <= hoy()), futuras = h.filter(x => x.fecha > hoy()).reverse();
+    const ult = pasadas[0], prox = futuras[0];
+    const desde90 = addDias(hoy(), -90);
+    const cuenta = pasadas.filter(x => x.fecha >= desde90).length;
+    const dias = f => Math.abs((parseYmd(hoy()) - parseYmd(f)) / 864e5);
+    const cerca = (ult && dias(ult.fecha) <= 14) || (prox && dias(prox.fecha) <= 14);
+    return `<div class="hist ${cerca ? 'alerta' : ''}"><b>${esc((ult || prox).hermano)}</b> ·
+      ${ult ? `última: ${esc(fmtFecha(ult.fecha))} — ${esc(ult.asignacion)} (${textoHace(ult.fecha)})` : 'sin asignaciones pasadas en el último año'}.
+      ${prox ? `Próxima: ${esc(fmtFecha(prox.fecha))} — ${esc(prox.asignacion)} (${textoHace(prox.fecha)}). ` : ''}
+      ${cuenta} ${cuenta === 1 ? 'asignación' : 'asignaciones'} en los últimos 3 meses.${cerca ? ' <b>Tiene una asignación muy cerca.</b>' : ''}</div>`;
+  }).join('');
+}
+function tablaEquilibrio() {
+  const nombres = new Map();
+  (HER || []).forEach(x => nombres.set(norm(x.nombre), x.nombre));
+  (HIST || []).forEach(x => { if (!nombres.has(norm(x.hermano))) nombres.set(norm(x.hermano), x.hermano); });
+  const filas = [...nombres.values()].map(n => {
+    const pasadas = historialDe(n).filter(x => x.fecha <= hoy());
+    const futuras = historialDe(n).filter(x => x.fecha > hoy());
+    return { n, ult: pasadas[0], prox: futuras[futuras.length - 1] };
+  }).filter(f => !f.prox).sort((a, b) => (a.ult ? a.ult.fecha : '0000').localeCompare(b.ult ? b.ult.fecha : '0000'));
+  if (!filas.length) return '<p class="small muted">Registre hermanos o asignaciones para ver esta lista.</p>';
+  return `<p class="small muted">Hermanos sin asignación próxima, empezando por quien lleva más tiempo sin una (incluye el archivo del último año).</p>
+    <div class="lista">${filas.slice(0, 25).map(f => `<div class="item"><div class="grow"><div class="t">${esc(f.n)}</div>
+      <div class="small muted">${f.ult ? `Última: ${esc(fmtFecha(f.ult.fecha))} — ${esc(f.ult.asignacion)} (${textoHace(f.ult.fecha)})` : 'Sin asignaciones en el último año'}</div></div>
+      <button class="btn btn-sm" type="button" data-n="${esc(f.n)}" onclick="usarNombre(this.dataset.n)">Asignar</button></div>`).join('')}</div>`;
+}
+
+function usarNombre(n) {
+  const i = $('#fAsig [name=hermano]'); if (!i) return;
+  i.value = n; i.dispatchEvent(new Event('input'));
+  i.scrollIntoView({ behavior: 'smooth', block: 'center' }); i.focus();
+}
 async function agregarAsig(e) {
   e.preventDefault();
   const f = e.target, b = $('#bAsig');
@@ -231,7 +287,7 @@ async function agregarAsig(e) {
   try {
     sesion.set('asig_fecha', f.fecha.value);
     const n = await post('agregarAsignaciones', { items: [{ fecha: f.fecha.value, seccion: f.seccion.value, asignacion: f.asignacion.value.trim(), hermano: f.hermano.value.trim() }] });
-    ASIG = await post('listarAsignaciones'); await recargarData();
+    ASIG = await post('listarAsignaciones'); HIST = await post('historial'); await recargarData();
     toast(`Agregada (${n.length})`, 'ok');
     render().then(() => { const i = $('#fAsig [name=asignacion]'); if (i) i.focus(); });
   } catch (err) { toast(err.message, 'err'); b.disabled = false; }
@@ -262,12 +318,12 @@ async function agregarBulk() {
   if (!items.length) return toast('Escriba al menos una línea', 'err');
   try {
     const n = await post('agregarAsignaciones', { items });
-    ASIG = await post('listarAsignaciones'); await recargarData();
+    ASIG = await post('listarAsignaciones'); HIST = await post('historial'); await recargarData();
     toast(`${n.length} asignaciones agregadas`, 'ok'); render();
   } catch (e) { toast(e.message, 'err'); }
 }
 async function borrarAsig(id) {
-  try { await post('borrarAsignacion', { id }); ASIG = ASIG.filter(a => a.id !== id); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
+  try { await post('borrarAsignacion', { id }); ASIG = ASIG.filter(a => a.id !== id); HIST = null; await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ---------- Territorios: el encargado programa las salidas ---------- */
@@ -281,7 +337,9 @@ function vTerritorios() {
     <div class="grid2"><label class="f"><span>Fecha</span><input type="date" name="fecha" required value="${esc(hoy())}"></label>
       <label class="f"><span>Hora</span><input type="text" name="hora" maxlength="20" placeholder="Ej. 9:00 a. m."></label></div>
     <div class="grid2 resp"><label class="f"><span>Territorio</span><select name="territorio" id="sTerr">${nums.map(n => `<option value="${esc(n)}">Territorio ${esc(n)}</option>`).join('')}</select></label>
-      <label class="f"><span>Conductor</span><input type="text" name="conductor" list="dlHerT" maxlength="80"></label></div>
+      <label class="f"><span>Conductor</span><input type="text" name="conductor" list="dlHerT" maxlength="80" oninput="$('#histCond').innerHTML=infoHermano(this.value)"></label></div>
+    <div id="histCond"></div>
+    <div id="estadoTerr"></div>
     <datalist id="dlHerT">${(HER || []).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist>
     <label class="f"><span>Punto de encuentro</span><input type="text" name="punto" maxlength="150" placeholder="Ej. Salón del Reino, casa de la familia Yax"></label>
     <div class="mapa-wrap"><div id="aMapa" class="mapa chico"></div>
@@ -300,14 +358,107 @@ function vTerritorios() {
       <div class="small muted">${esc(x.conductor || 'Sin conductor')}${x.punto ? ' · ' + esc(x.punto) : ''}</div></div>
       <button class="btn btn-sm btn-wa" onclick="compartirSalidaAdmin('${esc(x.id)}')">Avisar</button>
       <button class="x" aria-label="Eliminar" onclick="borrarSalida('${esc(x.id)}')">✕</button></div>`).join('')}</div>`
-    : '<div class="empty">No hay salidas programadas.</div>'}`;
+    : '<div class="empty">No hay salidas programadas.</div>'}
+  ${vRegistroTerritorios()}`;
+}
+
+/* ---------- Registro de territorios (S-13) ---------- */
+function vRegistroTerritorios() {
+  const R = Mapa.resumenRegistro(DATA.registro || []);
+  const lista = Object.values(R).sort((a, b) => (b.dias ?? 1e9) - (a.dias ?? 1e9));
+  const recientes = [...(DATA.registro || [])].sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.creado || '').localeCompare(a.creado || '')).slice(0, 15);
+  return `<div class="h-sec">Registro de territorios</div>
+  ${Mapa.leyenda()}
+  <details class="card"><summary>Registrar predicación de un territorio</summary>
+    <form id="fRegA" onsubmit="registrarAdmin(event)" style="margin-top:12px">
+      <div class="grid2"><label class="f"><span>Territorio</span><select name="territorio">${Mapa.numeros().map(n => `<option>${esc(n)}</option>`).join('')}</select></label>
+        <label class="f"><span>Fecha</span><input type="date" name="fecha" required max="${hoy()}" value="${hoy()}"></label></div>
+      <div class="grid2 resp"><label class="f"><span>¿Cómo quedó?</span><select name="estado"><option value="completo">Completo</option><option value="parcial">Parcial</option></select></label>
+        <label class="f"><span>Conductor</span><input type="text" name="conductor" list="dlHerT" required maxlength="80"></label></div>
+      <label class="f"><span>Nota (opcional)</span><input type="text" name="nota" maxlength="300"></label>
+      <button class="btn btn-primary btn-block">Guardar en el registro</button>
+    </form></details>
+  <p class="small muted">Ordenados por el que lleva más tiempo sin predicarse completo. Los publicadores también pueden registrar desde su app al terminar una salida.</p>
+  <div class="lista">${lista.map(t => `<div class="item">
+    <div class="fecha-box" style="background:${t.color}22"><div class="d" style="color:${t.color}">${esc(t.territorio)}</div><div class="m">terr.</div></div>
+    <div class="grow"><div class="t">${t.ultimoCompleto ? 'Completo ' + esc(Mapa.textoDias(t.dias)) : 'Sin registro de completo'}</div>
+      <div class="small muted">${t.ultimoCompleto ? esc(fmtFecha(t.ultimoCompleto.fecha, { day: 'numeric', month: 'short', year: 'numeric' })) + ' · ' + esc(t.ultimoCompleto.conductor) : ''}${t.enProgreso ? `${t.ultimoCompleto ? ' · ' : ''}<b>En progreso</b> (parcial el ${esc(fmtFecha(t.ultimo.fecha))})` : ''}</div></div>
+    <button class="btn btn-sm" type="button" onclick="programarTerr('${esc(t.territorio)}')">Programar</button></div>`).join('')}</div>
+  <div class="row" style="margin:12px 0"><button class="btn" type="button" onclick="copiarRegistro()">Copiar registro completo (para Excel o Sheets)</button></div>
+  ${recientes.length ? `<div class="h-sec">Últimos registros</div><div class="lista">${recientes.map(x => `<div class="item">
+      <div class="grow"><div class="t">Territorio ${esc(x.territorio)} · ${x.estado === 'completo' ? 'Completo' : 'Parcial'}</div>
+      <div class="small muted">${esc(fmtFecha(x.fecha, { day: 'numeric', month: 'short', year: 'numeric' }))} · ${esc(x.conductor)}${x.nota ? ' · ' + esc(x.nota) : ''}</div></div>
+      <button class="x" aria-label="Eliminar registro" onclick="borrarRegistro('${esc(x.id)}')">✕</button></div>`).join('')}</div>` : ''}`;
+}
+function programarTerr(n) {
+  const sel = $('#sTerr'); if (!sel) return;
+  sel.value = n; sel.dispatchEvent(new Event('change'));
+  $('#fSal').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function pintarEstadoTerr() {
+  const box = $('#estadoTerr'), sel = $('#sTerr'); if (!box || !sel) return;
+  const t = Mapa.resumenRegistro(DATA.registro || [])[sel.value]; if (!t) return;
+  box.innerHTML = `<div class="hist ${t.estado === 'reciente' ? 'alerta' : ''}">Territorio ${esc(t.territorio)}: ${t.ultimoCompleto ? 'completo ' + esc(Mapa.textoDias(t.dias)) : 'sin registro de completo'}${t.enProgreso ? ' · en progreso' : ''}.${t.estado === 'reciente' ? ' <b>Se predicó hace poco.</b>' : ''}</div>`;
+}
+async function registrarAdmin(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await post('registrarTerritorio', { territorio: f.territorio.value, fecha: f.fecha.value, estado: f.estado.value, conductor: f.conductor.value.trim(), nota: f.nota.value.trim() });
+    await recargarData(); toast('Guardado en el registro', 'ok'); render();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function borrarRegistro(id) {
+  if (!await confirmar('¿Eliminar este registro?')) return;
+  try { await post('borrarRegistro', { id }); await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
+}
+async function copiarRegistro() {
+  let filas;
+  try { filas = await post('registroCompleto'); } catch (e) { return toast(e.message, 'err'); }
+  const t = ['Territorio\tFecha\tEstado\tConductor\tNota', ...filas.sort((a, b) => (Number(a.territorio) - Number(b.territorio)) || a.fecha.localeCompare(b.fecha))
+    .map(x => [x.territorio, x.fecha, x.estado, x.conductor, x.nota].join('\t'))].join('\n');
+  try { await navigator.clipboard.writeText(t); toast(`${filas.length} registros copiados. Péguelos en una hoja de cálculo.`, 'ok'); }
+  catch (e) { hojaCompartir('Registro de territorios', t); }
+}
+
+/* ---------- Ajustes: código de la congregación ---------- */
+function vAjustes(aj) {
+  const enlace = location.origin + location.pathname.replace(/ancianos\.html$/, '');
+  return `<h1 class="titulo-vista">Ajustes</h1>
+  <form class="card" onsubmit="guardarCodigo(event)">
+    <h3 style="font-size:1.05rem">Código de la congregación</h3>
+    <p class="small muted">Los publicadores lo escriben una sola vez en su teléfono para poder ver la app. Si lo cambia, todos tendrán que escribir el nuevo (sirve para quitar el acceso a alguien).</p>
+    <p class="small">Estado actual: ${aj.codigo ? `<b style="color:var(--ok)">activado</b> · código: <b>${esc(aj.codigo)}</b>` : '<b style="color:var(--danger)">sin código</b> · cualquiera con el enlace puede ver la app'}</p>
+    <label class="f"><span>Nuevo código</span><input type="text" name="codigo" maxlength="30" autocomplete="off" placeholder="Ej. RIO2026" value="${esc(aj.codigo)}"></label>
+    <div class="row"><button class="btn btn-primary">Guardar código</button>
+      ${aj.codigo ? '<button type="button" class="btn btn-danger" onclick="quitarCodigo()">Quitar código</button>' : ''}</div>
+  </form>
+  <div class="card">
+    <h3 style="font-size:1.05rem">Enlace para los publicadores</h3>
+    <p class="small" style="word-break:break-all"><b>${esc(enlace)}</b></p>
+    <button class="btn btn-sm" type="button" onclick="hojaCompartir('App de la congregación', 'App de la congregación ${esc(CFG.CONGREGACION || '')}:\\n${esc(enlace)}')">Compartir enlace</button>
+    <p class="small muted" style="margin-bottom:0">Envíe el código por separado, de persona a persona, no en el grupo junto con el enlace.</p>
+  </div>`;
+}
+async function guardarCodigo(e) {
+  e.preventDefault();
+  const c = e.target.codigo.value.trim();
+  if (c && c.length < 4) return toast('Use al menos 4 letras o números', 'err');
+  try { await post('guardarCodigo', { codigo: c }); toast(c ? 'Código guardado' : 'Código quitado', 'ok'); render(); } catch (err) { toast(err.message, 'err'); }
+}
+async function quitarCodigo() {
+  if (!await confirmar('¿Quitar el código? Cualquier persona con el enlace podrá ver la app.', 'Quitar')) return;
+  try { await post('guardarCodigo', { codigo: '' }); toast('Código quitado'); render(); } catch (err) { toast(err.message, 'err'); }
 }
 function initTerritorios() {
   PUNTO = null;
   AM = Mapa.crear($('#aMapa'), { onMapa: ll => ponerPunto(ll.lat, ll.lng) });
+  const R = Mapa.resumenRegistro(DATA.registro || []);
+  const col = {}; Object.values(R).forEach(t => { col[t.territorio] = t.color; });
+  AM.colorear(col);
   const sel = $('#sTerr');
-  sel.onchange = () => AM.seleccionar(sel.value);
-  AM.seleccionar(sel.value);
+  sel.onchange = () => { AM.seleccionar(sel.value); pintarEstadoTerr(); };
+  AM.seleccionar(sel.value); pintarEstadoTerr();
 }
 function ponerPunto(lat, lng) {
   PUNTO = { lat: +lat.toFixed(6), lng: +lng.toFixed(6) };

@@ -28,6 +28,19 @@ function leerHash() {
 leerHash();
 window.addEventListener('hashchange', () => { leerHash(); render(); });
 
+/* ---------- Código de la congregación ---------- */
+function pantallaCodigo(error = '') {
+  $('#tabs').hidden = true;
+  $('#app').innerHTML = `<div class="codigo-pant card">
+    <h1 style="font-size:1.2rem">Bienvenido</h1>
+    <p class="small muted">Escriba el código de la congregación. Lo pide una sola vez en este teléfono. Si no lo tiene, pídaselo a un anciano.</p>
+    <form onsubmit="event.preventDefault();store.set('codigo',this.c.value.trim());$('#tabs').hidden=false;cargar()">
+      <input type="text" name="c" required autocomplete="off" autocapitalize="characters" placeholder="Código" aria-label="Código de la congregación">
+      ${error ? `<p class="small" style="color:var(--danger);margin:8px 0 0">${esc(error)}</p>` : ''}
+      <button class="btn btn-primary btn-block" style="margin-top:12px">Entrar</button>
+    </form></div>`;
+}
+
 async function cargar() {
   const cache = DEMO ? null : store.get('cache_data', null);
   if (cache) { DATA = cache; render(); }
@@ -35,16 +48,69 @@ async function cargar() {
   try {
     DATA = await API.get();
     if (!DEMO) store.set('cache_data', DATA);
+    $('#tabs').hidden = false;
     render();
+    revisarRespuestas();
   } catch (e) {
+    if (e.codigo) {
+      const habia = store.get('codigo', '');
+      DATA = null; store.del('cache_data'); store.del('cache_puntos');
+      return pantallaCodigo(habia ? 'El código no es correcto o fue cambiado.' : '');
+    }
     if (DATA) toast('Sin conexión: se muestra la última información guardada');
     else $('#app').innerHTML = `<div class="empty">No se pudo cargar la información.<br><span class="small">${esc(e.message)}</span><br><br><button class="btn btn-primary" onclick="cargar()">Reintentar</button></div>`;
   }
 }
 
+/* ---------- Avisos de "nuevo" ---------- */
+const SEC_TAB = { reuniones: ['entresemana', 'discursos'], asignaciones: ['limpieza', 'audio_video', 'acomodadores', 'predicacion'], anuncios: ['anuncios'], territorios: ['salidas'] };
+let VISTO = store.get('visto', null);
+if (!VISTO) {
+  const base = new Date(Date.now() - 3 * 864e5).toISOString();
+  VISTO = {}; Object.values(SEC_TAB).flat().forEach(k => { VISTO[k] = base; });
+  store.set('visto', VISTO);
+}
+const PREV = {};
+let RESP_NUEVAS = 0;
+function itemsDe(k) {
+  if (!DATA) return [];
+  if (k === 'anuncios') return DATA.anuncios;
+  if (k === 'salidas') return DATA.salidas || [];
+  return [...DATA.publicaciones.filter(p => p.seccion === k), ...DATA.asignaciones.filter(a => a.seccion === k)];
+}
+const hayNuevo = k => itemsDe(k).some(x => (x.creado || '') > (VISTO[k] || ''));
+const esNuevo = (k, x) => (x.creado || '') > (k in PREV ? PREV[k] : (VISTO[k] || ''));
+const chipNuevo = (k, x) => esNuevo(k, x) ? '<span class="chip nuevo">Nuevo</span>' : '';
+function marcarVisto(k) {
+  if (!(k in PREV)) PREV[k] = VISTO[k] || '';
+  VISTO[k] = new Date().toISOString(); store.set('visto', VISTO);
+}
+function pintarAvisos() {
+  $$('#tabs button').forEach(b => {
+    const v = b.dataset.v;
+    const nuevo = v === 'preguntas' ? RESP_NUEVAS > 0 : (SEC_TAB[v] || []).some(hayNuevo);
+    let d = $('.dot-nuevo', b);
+    if (nuevo && !d) { d = document.createElement('i'); d.className = 'dot-nuevo'; b.appendChild(d); }
+    if (!nuevo && d) d.remove();
+  });
+}
+async function revisarRespuestas() {
+  const ids = store.get('mis_preguntas', []);
+  if (!ids.length) return;
+  try {
+    const lista = await API.post('misPreguntas', { ids });
+    const vistas = store.get('resp_vistas', []);
+    RESP_NUEVAS = lista.filter(q => q.estado === 'respondida' && !vistas.includes(q.id)).length;
+    pintarAvisos();
+  } catch (e) {}
+}
+
 function render() {
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === vista));
   if (!DATA) return;
+  const actual = { reuniones: sub.reuniones, asignaciones: sub.asignaciones, anuncios: 'anuncios', territorios: 'salidas' }[vista];
+  if (actual) marcarVisto(actual);
+  pintarAvisos();
   if (vista !== 'territorios' && T.mapa) { T.mapa.destruir(); T.mapa = null; }
   if (vista === 'territorios') return renderTerritorios();
   const f = { inicio: vInicio, reuniones: vReuniones, asignaciones: vAsignaciones, anuncios: vAnuncios, preguntas: vPreguntas }[vista] || vInicio;
@@ -58,10 +124,10 @@ function tarjetaPub(p, mini = false) {
   const thumb = pdf && !p.archivoId ? `<div class="pub-pdf">PDF</div>` : `<img class="pub-img" loading="lazy" src="${esc(srcImagen(p))}" alt="">`;
   const badge = vigente(p) ? '<span class="chip ok">Vigente</span>' : '';
   if (mini) return `<button class="pub pub-mini" onclick="verPub('${esc(p.id)}')">${thumb}
-      <div class="grow"><div class="row">${chipSeccion(p.seccion)} ${badge}</div>
+      <div class="grow"><div class="row">${chipSeccion(p.seccion)} ${badge} ${chipNuevo(p.seccion, p)}</div>
       <div class="pub-t">${esc(p.titulo)}</div><div class="small muted">${esc(fmtRango(p.fechaInicio, p.fechaFin))}</div></div></button>`;
   return `<button class="pub" onclick="verPub('${esc(p.id)}')">${thumb}
-    <div class="pub-body"><div class="row">${chipSeccion(p.seccion)} ${badge} ${pdf ? '<span class="chip warn">PDF</span>' : ''}</div>
+    <div class="pub-body"><div class="row">${chipSeccion(p.seccion)} ${badge} ${chipNuevo(p.seccion, p)} ${pdf ? '<span class="chip warn">PDF</span>' : ''}</div>
     <div class="pub-t">${esc(p.titulo)}</div>
     <div class="small muted">${esc(fmtRango(p.fechaInicio, p.fechaFin))}</div>
     ${p.nota ? `<div class="small pre" style="margin-top:6px">${esc(p.nota)}</div>` : ''}</div></button>`;
@@ -149,7 +215,7 @@ function vistaSeccion(seccion) {
 
 function segmentos(grupo, claves) {
   return `<div class="seg" role="tablist">${claves.map(k => `<button role="tab" class="${sub[grupo] === k ? 'on' : ''}"
-    onclick="sub['${grupo}']='${k}';store.set('sub_${grupo}','${k}');render()">${esc(SECCIONES[k].corto)}</button>`).join('')}</div>`;
+    onclick="sub['${grupo}']='${k}';store.set('sub_${grupo}','${k}');render()">${esc(SECCIONES[k].corto)}${sub[grupo] !== k && hayNuevo(k) ? '<i class="dot-nuevo"></i>' : ''}</button>`).join('')}</div>`;
 }
 
 function vReuniones() {
@@ -166,7 +232,7 @@ function vAnuncios() {
   if (!lista.length) return `<h1 class="titulo-vista">Anuncios y eventos</h1><div class="empty">No hay anuncios por ahora.</div>`;
   return `<h1 class="titulo-vista">Anuncios y eventos</h1>${lista.map(a => `
     <div class="card"><div class="anuncio">${a.fecha ? fechaBox(a.fecha) : ''}<div class="grow">
-      <div class="row"><span class="chip ${a.tipo === 'anuncio' ? '' : 'gold'}">${esc(TIPOS_ANUNCIO[a.tipo] || 'Anuncio')}</span>${a.fecha && a.fecha < h ? '<span class="chip">Pasado</span>' : ''}</div>
+      <div class="row"><span class="chip ${a.tipo === 'anuncio' ? '' : 'gold'}">${esc(TIPOS_ANUNCIO[a.tipo] || 'Anuncio')}</span>${a.fecha && a.fecha < h ? '<span class="chip">Pasado</span>' : ''}${chipNuevo('anuncios', a)}</div>
       <h3 style="font-size:1.05rem;margin-top:8px">${esc(a.titulo)}</h3>
       ${a.fecha ? `<div class="small muted cap">${esc(fmtLarga(a.fecha))}${a.hora ? ' · ' + esc(a.hora) : ''}</div>` : ''}
       ${a.texto ? `<p class="pre" style="margin:8px 0 0">${esc(a.texto)}</p>` : ''}
@@ -210,8 +276,11 @@ async function cargarMisPreguntas() {
   try {
     const lista = await API.post('misPreguntas', { ids });
     lista.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    const vistas = store.get('resp_vistas', []);
+    store.set('resp_vistas', lista.filter(q => q.estado === 'respondida').map(q => q.id));
+    RESP_NUEVAS = 0; pintarAvisos();
     cont.innerHTML = lista.length ? lista.map(q => `<div class="card preg ${q.estado === 'respondida' ? 'ok' : ''}">
-      <div class="row"><span class="chip ${q.estado === 'respondida' ? 'ok' : 'warn'}">${q.estado === 'respondida' ? 'Respondida' : 'Pendiente'}</span>
+      <div class="row"><span class="chip ${q.estado === 'respondida' ? 'ok' : 'warn'}">${q.estado === 'respondida' ? 'Respondida' : 'Pendiente'}</span>${q.estado === 'respondida' && !vistas.includes(q.id) ? '<span class="chip nuevo">Nueva respuesta</span>' : ''}
       <span class="small muted">${q.anciano ? 'Para ' + esc(q.anciano) : 'Cualquier anciano'}</span></div>
       <p class="pre" style="margin:8px 0 0">${esc(q.pregunta)}</p>
       ${q.respuesta ? `<div class="respuesta small pre"><b>Respuesta:</b> ${esc(q.respuesta)}</div>` : ''}</div>`).join('')
@@ -229,7 +298,7 @@ const proxSalidas = () => (DATA.salidas || []).filter(x => x.fecha >= hoy());
 function tarjetaSalida(x, conMapa = true) {
   const c = x.lat && x.lng ? { lat: +x.lat, lng: +x.lng } : Mapa.centro(x.territorio);
   return `<div class="card salida">
-    <div class="row"><span class="chip ok">${x.fecha === hoy() ? 'Hoy' : esc(fmtFecha(x.fecha))}</span>${x.hora ? `<span class="small muted">${esc(x.hora)}</span>` : ''}</div>
+    <div class="row"><span class="chip ok">${x.fecha === hoy() ? 'Hoy' : esc(fmtFecha(x.fecha))}</span>${x.hora ? `<span class="small muted">${esc(x.hora)}</span>` : ''}${chipNuevo('salidas', x)}</div>
     <h3 style="font-size:1.1rem;margin-top:8px">Territorio ${esc(x.territorio)}</h3>
     <div class="small muted cap">${esc(fmtLarga(x.fecha))}</div>
     ${x.conductor ? `<div class="small" style="margin-top:6px">Conductor: <b>${esc(x.conductor)}</b></div>` : ''}
@@ -239,7 +308,52 @@ function tarjetaSalida(x, conMapa = true) {
       ${c ? `<button class="btn btn-sm btn-primary" onclick="navegarSalida('${esc(x.id)}')"><span class="ico">${ICON.ruta}</span>Cómo llegar</button>` : ''}
       ${conMapa ? `<button class="btn btn-sm" onclick="verTerritorio('${esc(x.territorio)}')">Ver territorio</button>` : ''}
       <button class="btn btn-sm" onclick="compartirSalida('${esc(x.id)}')">Compartir</button>
+      ${x.fecha <= hoy() ? `<button class="btn btn-sm btn-verde" onclick="abrirRegistro('${esc(x.territorio)}','${esc(x.id)}')">Registrar cómo quedó</button>` : ''}
     </div></div>`;
+}
+
+/* ----- Registro de territorios ----- */
+let RESUMEN = null;
+function calcularResumen() { RESUMEN = Mapa.resumenRegistro(DATA.registro || []); return RESUMEN; }
+function abrirRegistro(territorio, salidaId) {
+  const sal = salidaId ? (DATA.salidas || []).find(x => x.id === salidaId) : null;
+  const d = document.createElement('div');
+  d.className = 'modal';
+  d.innerHTML = `<form class="modal-box" id="fReg">
+    <h3 style="font-size:1.05rem;margin-bottom:6px">Registrar predicación</h3>
+    <p class="small muted" style="margin:0 0 12px">Queda en el registro de territorios y cambia el color del mapa.</p>
+    <div class="grid2"><label class="f"><span>Territorio</span><select name="territorio">${Mapa.numeros().map(n => `<option ${String(n) === String(territorio) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+      <label class="f"><span>Fecha</span><input type="date" name="fecha" required max="${hoy()}" value="${esc(sal && sal.fecha <= hoy() ? sal.fecha : hoy())}"></label></div>
+    <label class="f"><span>¿Cómo quedó?</span>
+      <div class="seg-mini" role="radiogroup"><button type="button" data-e="completo" class="on">Completo</button><button type="button" data-e="parcial">Parcial</button></div></label>
+    <label class="f"><span>Conductor</span><input type="text" name="conductor" required maxlength="80" value="${esc((sal && sal.conductor) || store.get('mi_nombre', ''))}"></label>
+    <label class="f"><span>Nota (opcional)</span><input type="text" name="nota" maxlength="300" placeholder="Ej. Faltó la calle de atrás del mercado"></label>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-x>Cancelar</button><button class="btn btn-primary">Guardar</button></div></form>`;
+  document.body.appendChild(d);
+  const f = $('#fReg', d); let estado = 'completo';
+  d.addEventListener('click', e => {
+    if (e.target === d || e.target.closest('[data-x]')) return d.remove();
+    const b = e.target.closest('[data-e]');
+    if (b) { estado = b.dataset.e; $$('[data-e]', d).forEach(x => x.classList.toggle('on', x === b)); }
+  });
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('button.btn-primary', f); btn.disabled = true;
+    try {
+      const r = await API.post('registrarTerritorio', { territorio: f.territorio.value, fecha: f.fecha.value, estado, conductor: f.conductor.value.trim(), nota: f.nota.value.trim() });
+      (DATA.registro ||= []).push(r);
+      d.remove(); toast(`Territorio ${r.territorio} registrado como ${r.estado}`, 'ok');
+      calcularResumen();
+      if (T.mapa) { T.mapa.colorear(colorMapa()); pintarChips(); pintarInfo(); }
+    } catch (err) { toast(err.message, 'err'); btn.disabled = false; }
+  };
+}
+const colorMapa = () => { const m = {}; Object.values(RESUMEN || calcularResumen()).forEach(t => { m[t.territorio] = t.color; }); return m; };
+function pintarChips() {
+  const prox = new Set(proxSalidas().map(x => String(x.territorio)));
+  const R = RESUMEN || calcularResumen();
+  $('#tChips').innerHTML = Mapa.numeros().map(n => `<button data-n="${esc(n)}" class="${prox.has(String(n)) ? 'prox' : ''} ${String(n) === String(terrSel) ? 'on' : ''}"
+    style="border-bottom:4px solid ${R[n].color}" title="${esc(Mapa.ESTADOS[R[n].estado].texto)}" onclick="verTerritorio('${esc(n)}')">${esc(n)}</button>`).join('');
 }
 function tarjetaPunto(pt) {
   const mio = misPuntos().includes(pt.id);
@@ -510,16 +624,22 @@ function pintarInfo() {
   if (terrSel == null || !Mapa.buscar(terrSel)) { box.innerHTML = ''; return; }
   const c = Mapa.centro(terrSel);
   const sal = proxSalidas().filter(x => String(x.territorio) === String(terrSel));
+  const R = (RESUMEN || calcularResumen())[terrSel];
+  const est = Mapa.ESTADOS[R.estado];
   box.innerHTML = `<div class="card"><div class="row"><h3 class="grow" style="font-size:1.1rem">Territorio ${esc(terrSel)}</h3>
       <button class="x" aria-label="Quitar selección" onclick="terrSel=null;T.mapa.verTodos();pintarInfo()">✕</button></div>
-    <p class="small muted" style="margin:4px 0 10px">${sal.length ? `Próxima salida: <b>${esc(fmtLarga(sal[0].fecha))}${sal[0].hora ? ', ' + esc(sal[0].hora) : ''}</b>` : 'Sin salida programada.'}</p>
-    <div class="row"><button class="btn btn-sm btn-primary" onclick="navegarA(${c.lat},${c.lng},'Territorio ${esc(terrSel)}')"><span class="ico">${ICON.ruta}</span>Cómo llegar</button>
+    <div class="estado-t" style="margin-top:4px"><i style="background:${est.color}"></i>Completo ${esc(Mapa.textoDias(R.dias))}${R.ultimoCompleto ? ' (' + esc(fmtFecha(R.ultimoCompleto.fecha, { day: 'numeric', month: 'short', year: 'numeric' })) + ')' : ''}</div>
+    ${R.enProgreso ? `<div class="small" style="margin-top:4px">En progreso: trabajado parcialmente el ${esc(fmtFecha(R.ultimo.fecha))} por ${esc(R.ultimo.conductor)}${R.ultimo.nota ? ' — ' + esc(R.ultimo.nota) : ''}</div>` : ''}
+    <p class="small muted" style="margin:6px 0 10px">${sal.length ? `Próxima salida: <b>${esc(fmtLarga(sal[0].fecha))}${sal[0].hora ? ', ' + esc(sal[0].hora) : ''}</b>` : 'Sin salida programada.'}</p>
+    ${R.historial.length ? `<details style="margin-bottom:10px"><summary class="small" style="cursor:pointer;font-weight:600">Historial (${R.historial.length})</summary>
+      <div class="small" style="margin-top:6px">${R.historial.slice(0, 12).map(h => `<div>${esc(fmtFecha(h.fecha, { day: 'numeric', month: 'short', year: 'numeric' }))} · ${h.estado === 'completo' ? '<b>Completo</b>' : 'Parcial'} · ${esc(h.conductor)}${h.nota ? ' — ' + esc(h.nota) : ''}</div>`).join('')}</div></details>` : ''}
+    <div class="row"><button class="btn btn-sm btn-verde" onclick="abrirRegistro('${esc(terrSel)}')">Registrar predicación</button><button class="btn btn-sm btn-primary" onclick="navegarA(${c.lat},${c.lng},'Territorio ${esc(terrSel)}')"><span class="ico">${ICON.ruta}</span>Cómo llegar</button>
       <button class="btn btn-sm" onclick="compartirTerritorio('${esc(terrSel)}')">Compartir territorio</button></div></div>`;
 }
 
 async function renderTerritorios() {
   const app = $('#app');
-  if (T.mapa && $('#tMapa')) { pintarSalidas(); pintarInfo(); pintarPuntos(); pintarNav(); return; }
+  if (T.mapa && $('#tMapa')) { calcularResumen(); T.mapa.colorear(colorMapa()); pintarChips(); pintarSalidas(); pintarInfo(); pintarPuntos(); pintarNav(); return; }
   app.innerHTML = '<div class="skeleton" style="height:300px"></div>';
   try { await Mapa.territorios(); } catch (e) { app.innerHTML = '<div class="empty">No se pudo cargar el mapa de territorios.</div>'; return; }
   const prox = new Set(proxSalidas().map(x => String(x.territorio)));
@@ -536,13 +656,15 @@ async function renderTerritorios() {
     <div id="tSalidas"></div>
     <div id="tInfo"></div>
     <div class="h-sec">Elegir territorio</div>
-    <div class="chips-t" id="tChips">${Mapa.numeros().map(n => `<button data-n="${esc(n)}" class="${prox.has(String(n)) ? 'prox' : ''}" onclick="verTerritorio('${esc(n)}')">${esc(n)}</button>`).join('')}</div>
-    <p class="small muted" style="margin-top:14px">Los territorios, el GPS y la dirección hacia un punto funcionan <b>sin internet</b>. Para ver la ruta por las calles y los puntos nuevos de otros grupos se necesita internet. Las calles del fondo se guardan cuando se ven con internet. Línea verde = territorio con salida programada.</p>`;
+    ${Mapa.leyenda()}
+    <div class="chips-t" id="tChips"></div>
+    <p class="small muted" style="margin-top:14px">Los territorios, el GPS y la dirección hacia un punto funcionan <b>sin internet</b>. Para ver la ruta por las calles y los puntos nuevos de otros grupos se necesita internet. Las calles del fondo se guardan cuando se ven con internet. Borde azul = territorio con salida programada. Los colores muestran cuánto tiempo lleva cada territorio sin predicarse completo.</p>`;
   T.mapa = Mapa.crear($('#tMapa'), {
     onTerritorio: n => { terrSel = String(n); T.mapa.seleccionar(terrSel, false); pintarInfo(); },
     onClic: clicEnMapa,
     onArrastre: () => { if (NAV && NAV.seguir) { NAV.seguir = false; pintarNav(); } }
   });
+  calcularResumen(); T.mapa.colorear(colorMapa()); pintarChips();
   if (terrSel != null) T.mapa.seleccionar(terrSel);
   if (!PUNTOS.length) PUNTOS = DATA.puntos || store.get('cache_puntos', []);
   pintarSalidas(); pintarInfo(); pintarPuntos();
