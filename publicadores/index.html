@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>El Río-Panajachel</title>
+<meta name="description" content="Información de la congregación El Río-Panajachel">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#1f3a5f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/icon-apple.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="El Río">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="../lib/leaflet.css">
+<link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="row" style="gap:12px;flex-wrap:nowrap"><img class="logo" src="../icons/icon-encabezado.png" alt="" width="42" height="42"><div>
+      <div class="brand" id="brand">El Río-Panajachel</div>
+      <div class="sub">Información de la congregación</div>
+    </div></div>
+    <button id="btnInstalar" class="btn-ghost-light" hidden onclick="instalarApp()">Instalar app</button>
+  </div>
+</header>
+<div id="demoBanner" class="demo" hidden>Sin conectar a Google · lo publicado solo se ve en este teléfono</div>
+
+<nav class="tabs" id="tabs" aria-label="Secciones"></nav>
+<main id="app" class="wrap" aria-live="polite"></main>
+
+<div id="viewer" class="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewerTitle">
+  <div class="viewer-bar">
+    <button onclick="cerrarVisor()" aria-label="Cerrar">✕ Cerrar</button>
+    <div class="t" id="viewerTitle"></div>
+    <a id="viewerOpen" target="_blank" rel="noopener">Abrir original</a>
+  </div>
+  <div class="viewer-hint">Toque la imagen para acercar · deslice para moverse</div>
+  <div class="viewer-body" id="viewerBody"></div>
+</div>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script src="../config.js"></script>
+<script src="../core.js"></script>
+<script src="../lib/leaflet.js"></script>
+<script src="../mapa.js"></script>
+<script src="../publicadores.js"></script>
+</body>
+</html>

@@ -6,7 +6,7 @@ const Mapa = (() => {
 
   async function territorios() {
     if (GEO) return GEO;
-    const r = await fetch('territorios.geojson');
+    const r = await fetch(new URL('../territorios.geojson', location.href).href);
     GEO = await r.json();
     GEO.features.forEach(f => { f.properties.anillos = anillos(f); });
     return GEO;
@@ -251,7 +251,7 @@ const Mapa = (() => {
   /* Enlaces y mensajes */
   const enlaceMapa = (lat, lng) => `https://maps.google.com/?q=${(+lat).toFixed(6)},${(+lng).toFixed(6)}`;
   const enlaceRuta = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${(+lat).toFixed(6)},${(+lng).toFixed(6)}`;
-  const enlaceApp = n => `${location.origin}${location.pathname.replace(/ancianos\.html$/, '')}#territorio-${n}`;
+  const enlaceApp = n => new URL(`../publicadores/#territorio-${n}`, location.href).href;
 
   return { territorios, numeros, buscar, territorioDe, centro, crear, enlaceMapa, enlaceRuta, enlaceApp,
     ESTADOS, resumenRegistro, textoDias, leyenda,

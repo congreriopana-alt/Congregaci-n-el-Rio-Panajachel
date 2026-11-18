@@ -298,7 +298,7 @@ const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const esInstalada = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  window.addEventListener('load', () => navigator.serviceWorker.register(new URL('../sw.js', location.href).href, { scope: new URL('../', location.href).href }).catch(() => {}));
 }
 
 /* Leer archivo, reducir imágenes grandes y devolver base64 */

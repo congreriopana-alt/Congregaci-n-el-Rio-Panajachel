@@ -26,7 +26,7 @@ function vLogin(error = '') {
       ${error ? `<p class="small" style="color:var(--danger);margin-top:0">${esc(error)}</p>` : ''}
       <button class="btn btn-primary btn-block" id="bEntrar">Entrar</button>
     </form>
-    <p class="small muted" style="margin-bottom:0"><a href="index.html">← Ir a la app de publicadores</a></p></div>`;
+    <p class="small muted" style="margin-bottom:0"><a href="../publicadores/">← Ir a la app de publicadores</a></p></div>`;
 }
 async function entrar(e) {
   e.preventDefault();
@@ -423,7 +423,7 @@ async function copiarRegistro() {
 
 /* ---------- Ajustes: código de la congregación ---------- */
 function vAjustes(aj) {
-  const enlace = location.origin + location.pathname.replace(/ancianos\.html$/, '');
+  const enlace = new URL('../', location.href).href;
   return `<h1 class="titulo-vista">Ajustes</h1>
   <form class="card" onsubmit="guardarCodigo(event)">
     <h3 style="font-size:1.05rem">Código de la congregación</h3>

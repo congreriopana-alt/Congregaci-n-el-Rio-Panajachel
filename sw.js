@@ -1,12 +1,14 @@
 /* Service worker: permite instalar la app y usarla sin internet.
    - La app, el mapa de territorios y la librería del mapa se guardan al instalar.
    - Las calles del fondo (OpenStreetMap) se guardan cada vez que se ven con internet. */
-const CACHE = 'rio-v4';
+const CACHE = 'rio-v5';
 const CACHE_MAPA = 'rio-mapa-v1';
 const MAX_TILES = 3000;
-const SHELL = ['./', 'index.html', 'ancianos.html', 'styles.css', 'config.js', 'core.js', 'mapa.js', 'publicadores.js', 'ancianos.js',
+const SHELL = ['./', 'index.html', 'publicadores/', 'publicadores/index.html', 'publicadores/manifest.json',
+  'ancianos/', 'ancianos/index.html', 'ancianos/manifest.json',
+  'styles.css', 'config.js', 'core.js', 'mapa.js', 'publicadores.js', 'ancianos.js',
   'territorios.geojson', 'lib/leaflet.js', 'lib/leaflet.css',
-  'manifest.json', 'manifest-ancianos.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/admin-192.png'];
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-encabezado.png', 'icons/admin-192.png', 'icons/admin-encabezado.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {}));
@@ -50,6 +52,7 @@ self.addEventListener('fetch', e => {
     fetch(req).then(r => {
       if (r.ok) { const copia = r.clone(); caches.open(CACHE).then(c => c.put(req, copia)); }
       return r;
-    }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
+    }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r ||
+      caches.match(url.pathname.includes('/ancianos') ? 'ancianos/index.html' : 'publicadores/index.html')))
   );
 });
