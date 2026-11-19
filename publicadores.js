@@ -77,7 +77,7 @@ function itemsDe(k) {
   if (k === 'anuncios') return DATA.anuncios;
   if (k === 'salidas') return DATA.salidas || [];
   return [...DATA.publicaciones.filter(p => p.seccion === k), ...DATA.asignaciones.filter(a => a.seccion === k),
-    ...(k === 'entresemana' ? (DATA.programas || []) : [])];
+    ...(k === 'entresemana' ? (DATA.programas || []) : []), ...(DATA.tablas || []).filter(t => t.seccion === k)];
 }
 const hayNuevo = k => itemsDe(k).some(x => (x.creado || '') > (VISTO[k] || ''));
 const esNuevo = (k, x) => (x.creado || '') > (k in PREV ? PREV[k] : (VISTO[k] || ''));
@@ -200,10 +200,12 @@ function vInicio() {
 function vistaSeccion(seccion) {
   const pubs = DATA.publicaciones.filter(p => p.seccion === seccion);
   pubs.sort((a, b) => (vigente(b) - vigente(a)) || (b.fechaInicio || '').localeCompare(a.fechaInicio || ''));
-  const conPrograma = seccion === 'entresemana' && (DATA.programas || []).length;
+  const tablas = (DATA.tablas || []).filter(t => t.seccion === seccion && t.filas.some(f => f.fecha >= semana().inicio));
+  const conPrograma = (seccion === 'entresemana' && (DATA.programas || []).length) || tablas.length;
   const asig = conPrograma ? [] : DATA.asignaciones.filter(a => a.seccion === seccion && a.fecha >= hoy());
   return `
-    ${conPrograma ? bloquePrograma() : ''}
+    ${seccion === 'entresemana' && (DATA.programas || []).length ? bloquePrograma() : ''}
+    ${tablas.map(t => Tablas.html(t, store.get('mi_nombre', ''))).join('')}
     ${pubs.length ? `${conPrograma ? '<div class="h-sec">Archivos</div>' : ''}${pubs.map(p => tarjetaPub(p)).join('')}`
       : conPrograma ? '' : `<div class="empty">Todavía no hay programa publicado de ${esc(SECCIONES[seccion].nombre.toLowerCase())}.</div>`}
     ${asig.length ? `<div class="h-sec">Próximas asignaciones</div>${listaAsignaciones(asig, store.get('mi_nombre', ''))}` : ''}`;

@@ -1,13 +1,13 @@
 /* Service worker: permite instalar la app y usarla sin internet.
    - La app, el mapa de territorios y la librería del mapa se guardan al instalar.
    - Las calles del fondo (OpenStreetMap) se guardan cada vez que se ven con internet. */
-const CACHE = 'rio-v9';
+const CACHE = 'rio-v10';
 const CACHE_MAPA = 'rio-mapa-v1';
 const MAX_TILES = 3000;
 const SHELL = ['./', 'index.html', 'publicadores/', 'publicadores/index.html', 'publicadores/manifest.json',
   'ancianos/', 'ancianos/index.html', 'ancianos/manifest.json',
   'styles.css', 'config.js', 'core.js', 'mapa.js', 'publicadores.js', 'ancianos.js',
-  'territorios.geojson', 'programa.js', 'lib/leaflet.js', 'lib/leaflet.css',
+  'territorios.geojson', 'programa.js', 'tablas.js', 'lib/leaflet.js', 'lib/leaflet.css',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-encabezado.png', 'icons/admin-192.png', 'icons/admin-encabezado.png'];
 
 self.addEventListener('install', e => {

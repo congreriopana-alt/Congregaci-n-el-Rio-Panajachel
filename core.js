@@ -144,6 +144,7 @@ const Demo = (() => {
         ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre),
         puntos: puntosActivos(),
         zoom: st.zoom || null,
+        tablas: (st.tablas ||= []).filter(x => x.mes >= addDias(h, -14).slice(0, 7)).sort((a, b) => a.mes.localeCompare(b.mes)),
         programas: (st.programas ||= []).filter(x => x.fin >= addDias(h, -14)).sort((a, b) => a.fecha.localeCompare(b.fecha)),
         registro: (st.registro ||= []).filter(x => x.fecha >= addDias(h, -730)),
         salidas: (st.salidas ||= []).filter(x => x.repetir === 'semanal' || x.fecha >= addDias(h, -1)).sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
@@ -196,6 +197,24 @@ const Demo = (() => {
         return f;
       }
       case 'ajustes': return { codigo: st.codigo || '' };
+      case 'guardarTablas': {
+        const ahora = new Date().toISOString(); let n = 0;
+        (p.tablas || []).forEach(t => {
+          st.tablas = (st.tablas || []).filter(x => !(x.seccion === t.seccion && x.mes === t.mes));
+          st.asignaciones = st.asignaciones.filter(a => !(a.origen === 'tabla' && a.seccion === t.seccion && a.fecha.slice(0, 7) === t.mes));
+          const filas = (t.filas || []).filter(f => f.fecha && f.fecha.slice(0, 7) === t.mes).sort((a, b) => a.fecha.localeCompare(b.fecha));
+          st.tablas.push({ id: uid(), seccion: t.seccion, mes: t.mes, columnas: t.columnas, filas, creado: ahora });
+          filas.forEach(f => f.valores.forEach((v, i) => String(v || '').split('/').map(x => x.trim()).filter(Boolean).forEach(nm => {
+            st.asignaciones.push({ id: uid(), fecha: f.fecha, seccion: t.seccion, asignacion: t.columnas[i], hermano: nm, creado: ahora, origen: 'tabla' }); n++;
+          })));
+        });
+        guardar(); return { tablas: (p.tablas || []).length, asignaciones: n };
+      }
+      case 'borrarTabla': {
+        const t = (st.tablas || []).find(x => x.id === p.id);
+        if (t) { st.tablas = st.tablas.filter(x => x.id !== p.id); st.asignaciones = st.asignaciones.filter(a => !(a.origen === 'tabla' && a.seccion === t.seccion && a.fecha.slice(0, 7) === t.mes)); guardar(); }
+        return true;
+      }
       case 'guardarProgramas': {
         const fechas = (p.programas || []).map(x => x.fecha);
         st.programas = (st.programas || []).filter(x => !fechas.includes(x.fecha));

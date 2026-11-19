@@ -292,3 +292,37 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .ev-linea { color: var(--muted); font-size: .95rem; margin-top: 4px; }
 .ev-texto { margin: 10px 0 0; font-size: .93rem; }
 .evento img { width: 100%; border-radius: 10px; margin-top: 10px; border: 1px solid var(--line); cursor: zoom-in; }
+/* Programas del mes en tabla (como el programa de audio y video) */
+.tabla-prog { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 16px; }
+.tp-tit { background: #1b2f5a; color: #fff; text-align: center; font-weight: 800; font-size: 1.05rem; letter-spacing: .03em; text-transform: uppercase; padding: 12px 10px 8px; }
+.tp-sub { background: #2c5fa8; color: #fff; text-align: center; font-weight: 700; font-size: .88rem; padding: 6px 10px; }
+.tp-sub::first-letter { text-transform: uppercase; }
+.tp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabla-prog table { border-collapse: collapse; width: 100%; min-width: 100%; font-size: .86rem; }
+.tabla-prog th { background: #1f3a6b; color: #fff; font-weight: 700; font-size: .74rem; text-transform: uppercase; letter-spacing: .03em; padding: 9px 8px; white-space: nowrap; text-align: center; }
+.tabla-prog td { padding: 9px 8px; text-align: center; border-bottom: 1px solid #d9e1ee; border-left: 1px solid #e3e9f3; line-height: 1.25; min-width: 92px; }
+.tabla-prog tbody tr:nth-child(even) td { background: #eef3fb; }
+.tabla-prog .tp-fecha { position: sticky; left: 0; z-index: 1; text-align: left; min-width: 84px; background: #fff; border-left: 0; box-shadow: 1px 0 0 #d9e1ee; }
+.tabla-prog thead .tp-fecha { background: #1f3a6b; z-index: 2; }
+.tabla-prog tbody tr:nth-child(even) .tp-fecha { background: #eef3fb; }
+.tabla-prog td.tp-fecha b { display: block; font-size: .95rem; }
+.tabla-prog td.tp-fecha span { display: block; font-weight: 700; color: var(--muted); font-size: .78rem; }
+.tabla-prog td.tp-fecha em { display: inline-block; margin-top: 3px; font-style: normal; font-size: .68rem; font-weight: 800; color: #fff; background: #2f8a4f; border-radius: 999px; padding: 1px 7px; }
+.tabla-prog tr.tp-semana td { background: #fff4c7 !important; font-weight: 650; }
+.tabla-prog tr.tp-hoy td { background: #ffe58f !important; font-weight: 750; }
+.tabla-prog tr.tp-hoy td.tp-fecha, .tabla-prog tr.tp-semana td.tp-fecha { box-shadow: inset 4px 0 0 #2f8a4f, 1px 0 0 #d9e1ee; }
+.tabla-prog tr.tp-pasada td { color: #9aa3ad; }
+/* Editor de tablas en el panel */
+.ed-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; }
+.ed-tabla { border-collapse: collapse; font-size: .85rem; }
+.ed-tabla th, .ed-tabla td { padding: 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.ed-tabla th { background: #1f3a6b; white-space: nowrap; }
+.ed-tabla th .x { color: #fff; padding: 2px 4px; font-size: .9rem; }
+.ed-tabla input { padding: 7px 8px; font-size: .88rem; min-width: 130px; border-radius: 8px; }
+.ed-tabla .ed-col { min-width: 110px; font-weight: 700; }
+.ed-fecha { white-space: nowrap; position: sticky; left: 0; background: #fff; z-index: 1; }
+.ed-fecha input { min-width: 0; width: 140px; }
+.ed-fecha span { display: block; font-size: .72rem; color: var(--muted); padding-left: 4px; }
+.tabla-prog td.tp-fecha em { white-space: nowrap; font-size: .62rem; }
+.tp-desliza { display: none; text-align: right; font-size: .75rem; color: var(--muted); padding: 6px 10px 0; }
+@media (max-width: 640px) { .tp-desliza { display: block; } }

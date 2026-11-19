@@ -5,7 +5,7 @@ let vista = sesion.get('vista', 'subir');
 let recSemana = 0, filtroAsig = '';
 const VISTAS = [
   ['subir', 'Subir programa'], ['publicado', 'Publicado'], ['anuncios', 'Anuncios'],
-  ['asignaciones', 'Asignaciones'], ['territorios', 'Territorios'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos'], ['zoom', 'Zoom'], ['ajustes', 'Ajustes']
+  ['tablas', 'Programas del mes'], ['asignaciones', 'Asignaciones'], ['territorios', 'Territorios'], ['recordatorios', 'Recordatorios'], ['preguntas', 'Preguntas'], ['hermanos', 'Hermanos'], ['zoom', 'Zoom'], ['ajustes', 'Ajustes']
 ];
 let HIST = null;
 if (DEMO) $('#demoBanner').hidden = false;
@@ -74,6 +74,7 @@ async function render() {
     else if (vista === 'anuncios') { app.innerHTML = vAnuncios(); initAnuncios(); }
     else if (vista === 'asignaciones') { if (!ASIG || !HIST) { app.innerHTML = '<div class="skeleton"></div>'; ASIG ||= await post('listarAsignaciones'); HER ||= await post('listarHermanos'); HIST ||= await post('historial'); } app.innerHTML = vAsignaciones(); }
     else if (vista === 'zoom') { app.innerHTML = vZoom(); initZoom(); }
+    else if (vista === 'tablas') { app.innerHTML = '<div class="skeleton"></div>'; HER ||= await post('listarHermanos'); app.innerHTML = vTablas(); cargarEditor(); }
     else if (vista === 'ajustes') { app.innerHTML = '<div class="skeleton"></div>'; app.innerHTML = vAjustes(await post('ajustes')); }
     else if (vista === 'hermanos') { if (!HER) { app.innerHTML = '<div class="skeleton"></div>'; HER = await post('listarHermanos'); } app.innerHTML = vHermanos(); }
     else if (vista === 'preguntas') app.innerHTML = vPreguntas();
@@ -517,6 +518,145 @@ async function copiarRegistro() {
     .map(x => [x.territorio, x.fecha, x.estado, x.conductor, x.nota].join('\t'))].join('\n');
   try { await navigator.clipboard.writeText(t); toast(`${filas.length} registros copiados. Péguelos en una hoja de cálculo.`, 'ok'); }
   catch (e) { hojaCompartir('Registro de territorios', t); }
+}
+
+/* ---------- Programas del mes en tabla ---------- */
+let ED = null;
+const mesActual = () => { const d = new Date(); if (d.getDate() >= 20) d.setMonth(d.getMonth() + 1, 1); return `${d.getFullYear()}-${z2(d.getMonth() + 1)}`; };
+function vTablas() {
+  const sec = sesion.get('tabla_sec', 'audio_video'), mes = sesion.get('tabla_mes', mesActual());
+  const guardadas = DATA.tablas || [];
+  return `<h1 class="titulo-vista">Programas del mes</h1>
+  <p class="small muted" style="margin-top:-6px">Audio y video, acomodadores, predicación y limpieza. Los publicadores los ven en <b>Asignaciones</b> con la semana resaltada, y cada hermano recibe su recordatorio el lunes.</p>
+  <div class="card">
+    <div class="grid2"><label class="f"><span>Programa</span><select id="tSec">${Tablas.SECCIONES_TABLA.map(k => `<option value="${k}" ${k === sec ? 'selected' : ''}>${esc(SECCIONES[k].nombre)}</option>`).join('')}</select></label>
+      <label class="f"><span>Mes</span><input type="month" id="tMes" value="${esc(mes)}"></label></div>
+    <div class="row" style="gap:6px;margin-bottom:10px">
+      <label class="btn btn-sm">Leer PDF<input type="file" accept="application/pdf" id="tPdf" hidden></label>
+      <button class="btn btn-sm" type="button" onclick="pegarTabla()">Pegar de Word o Excel</button>
+      <button class="btn btn-sm" type="button" onclick="rellenarRotacion()">Rellenar con rotación</button>
+      <button class="btn btn-sm" type="button" onclick="fechasDeNuevo()">Fechas del mes</button>
+    </div>
+    <div id="edEstado" class="small muted" style="margin-bottom:8px"></div>
+    <div class="ed-scroll"><table class="ed-tabla" id="edTabla"></table></div>
+    <datalist id="dlNomT"></datalist>
+    <div class="row" style="gap:6px;margin-top:10px">
+      <button class="btn btn-sm" type="button" onclick="ED.filas.push({fecha:'',valores:ED.columnas.map(()=>'')});pintarEditor()">+ Agregar fecha</button>
+      <button class="btn btn-sm" type="button" onclick="ED.columnas.push('Nueva');ED.filas.forEach(f=>f.valores.push(''));pintarEditor()">+ Agregar columna</button>
+    </div>
+    <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="guardarTabla()">Guardar y publicar</button>
+  </div>
+  <div class="h-sec">Publicados</div>
+  ${guardadas.length ? `<div class="lista">${guardadas.map(t => `<div class="item"><div class="grow"><div class="t">${esc(SECCIONES[t.seccion].nombre)} · <span class="cap" style="display:inline-block">${esc(Tablas.nombreMes(t.mes))}</span></div>
+    <div class="small muted">${t.filas.length} fechas · ${t.columnas.map(esc).join(', ')}</div></div>
+    <button class="btn btn-sm" onclick="editarTabla('${esc(t.seccion)}','${esc(t.mes)}')">Editar</button>
+    <button class="x" aria-label="Eliminar" onclick="borrarTabla('${esc(t.id)}')">✕</button></div>`).join('')}</div>` : '<div class="empty">Todavía no hay programas del mes publicados.</div>'}`;
+}
+function nombresConocidos() {
+  const set = new Map();
+  const add = n => { n = String(n || '').trim(); if (n.length >= 3 && !set.has(norm(n))) set.set(norm(n), n); };
+  (HER || []).forEach(h => add(h.nombre));
+  (DATA.tablas || []).forEach(t => t.filas.forEach(f => f.valores.forEach(v => String(v).split('/').forEach(add))));
+  (HIST || []).forEach(h => add(h.hermano));
+  (DATA.asignaciones || []).forEach(a => add(a.hermano));
+  return [...set.values()].sort((a, b) => a.localeCompare(b));
+}
+function cargarEditor() {
+  const sec = $('#tSec').value, mes = $('#tMes').value;
+  sesion.set('tabla_sec', sec); sesion.set('tabla_mes', mes);
+  const ex = (DATA.tablas || []).find(t => t.seccion === sec && t.mes === mes);
+  ED = ex ? { seccion: sec, mes, columnas: [...ex.columnas], filas: ex.filas.map(f => ({ fecha: f.fecha, valores: [...f.valores] })) }
+    : { seccion: sec, mes, columnas: [...Tablas.CONFIG[sec].columnas], filas: Tablas.fechasDelMes(sec, mes, DATA).map(f => ({ fecha: f, valores: Tablas.CONFIG[sec].columnas.map(() => '') })) };
+  $('#edEstado').textContent = ex ? 'Editando el programa ya publicado de este mes.' : 'Programa nuevo: las fechas de reunión del mes ya están puestas.';
+  $('#tSec').onchange = $('#tMes').onchange = cargarEditor;
+  $('#tPdf').onchange = leerPdfTabla;
+  $('#dlNomT').innerHTML = nombresConocidos().map(n => `<option value="${esc(n)}">`).join('');
+  pintarEditor();
+}
+function editarTabla(sec, mes) { $('#tSec').value = sec; $('#tMes').value = mes; cargarEditor(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+function fechasDeNuevo() {
+  const fechas = Tablas.fechasDelMes(ED.seccion, ED.mes, DATA);
+  const previas = new Map(ED.filas.map(f => [f.fecha, f.valores]));
+  ED.filas = fechas.map(f => ({ fecha: f, valores: previas.get(f) || ED.columnas.map(() => '') }));
+  pintarEditor();
+}
+function pintarEditor() {
+  ED.filas.sort((a, b) => (a.fecha || '9999').localeCompare(b.fecha || '9999'));
+  $('#edTabla').innerHTML = `<thead><tr><th>Fecha</th>${ED.columnas.map((c, i) => `<th><input class="ed-col" value="${esc(c)}" onchange="ED.columnas[${i}]=this.value.trim()" aria-label="Nombre de la columna">
+      ${ED.columnas.length > 1 ? `<button class="x" type="button" title="Quitar columna" onclick="ED.columnas.splice(${i},1);ED.filas.forEach(f=>f.valores.splice(${i},1));pintarEditor()">✕</button>` : ''}</th>`).join('')}<th></th></tr></thead>
+    <tbody>${ED.filas.map((f, r) => `<tr><td class="ed-fecha"><input type="date" value="${esc(f.fecha)}" onchange="ED.filas[${r}].fecha=this.value;pintarEditor()"><span>${f.fecha ? esc(DIAS[parseYmd(f.fecha).getDay()]) : ''}</span></td>
+      ${ED.columnas.map((c, i) => `<td><input list="dlNomT" value="${esc(f.valores[i] || '')}" onchange="ED.filas[${r}].valores[${i}]=this.value.trim()" aria-label="${esc(c)}"></td>`).join('')}
+      <td><button class="x" type="button" title="Quitar fecha" onclick="ED.filas.splice(${r},1);pintarEditor()">✕</button></td></tr>`).join('')}</tbody>`;
+}
+function aplicarFilas(filas, origen) {
+  if (!filas.length) return toast(`No se encontraron fechas con nombres en ${origen}`, 'err');
+  const max = Math.max(...filas.map(f => f.valores.length));
+  while (ED.columnas.length < max) ED.columnas.push('Columna ' + (ED.columnas.length + 1));
+  ED.filas = filas.map(f => ({ fecha: f.fecha, valores: ED.columnas.map((c, i) => f.valores[i] || '') }));
+  const meses = [...new Set(filas.map(f => f.fecha.slice(0, 7)))].sort();
+  ED.mes = meses[0]; $('#tMes').value = meses[0];
+  $('#edEstado').textContent = `Se leyeron ${filas.length} fechas${meses.length > 1 ? ' de ' + meses.map(Tablas.nombreMes).join(' y ') + ' (se guardará un programa por mes)' : ''}. Revise y toque Guardar.`;
+  pintarEditor();
+}
+async function leerPdfTabla(e) {
+  const f = e.target.files[0]; if (!f) return;
+  $('#edEstado').textContent = 'Leyendo el PDF…';
+  try { const lineas = await Programa.leerLineas(await f.arrayBuffer()); aplicarFilas(Tablas.leerFilas(lineas, +ED.mes.slice(0, 4)), 'el PDF'); }
+  catch (err) { toast('No se pudo leer el PDF: ' + err.message, 'err'); }
+  e.target.value = '';
+}
+function pegarTabla() {
+  const d = document.createElement('div');
+  d.className = 'modal';
+  d.innerHTML = `<div class="modal-box"><h3 style="font-size:1.05rem">Pegar desde Word o Excel</h3>
+    <p class="small muted">Copie la tabla completa (con las fechas) y péguela aquí.</p>
+    <textarea class="compartir-edit" placeholder="5 de noviembre	jueves	Erick Josias	Rudy Ruiz	…"></textarea>
+    <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" data-x>Cancelar</button><button class="btn btn-primary" data-ok>Leer</button></div></div>`;
+  d.addEventListener('click', e => {
+    if (e.target === d || e.target.closest('[data-x]')) return d.remove();
+    if (e.target.closest('[data-ok]')) { const t = $('textarea', d).value; d.remove(); aplicarFilas(Tablas.leerFilas(t.split('\n'), +ED.mes.slice(0, 4)), 'el texto'); }
+  });
+  document.body.appendChild(d); $('textarea', d).focus();
+}
+/* Rotación: llena las casillas vacías con quien lleva más tiempo sin hacer esa tarea, sin repetir en la misma fecha */
+function rellenarRotacion() {
+  const otras = (DATA.tablas || []).filter(t => t.seccion === ED.seccion && t.mes !== ED.mes);
+  let llenas = 0; const sinNombres = [];
+  ED.filas.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  ED.columnas.forEach((col, i) => {
+    const ult = new Map();
+    const usar = (n, fecha) => String(n || '').split('/').map(x => x.trim()).filter(Boolean).forEach(x => { if (!ult.has(x) || fecha > ult.get(x)) ult.set(x, fecha); });
+    otras.forEach(t => { const j = t.columnas.findIndex(c => norm(c) === norm(col)); if (j >= 0) t.filas.forEach(f => usar(f.valores[j], f.fecha)); });
+    ED.filas.forEach(f => usar(f.valores[i], f.fecha || ''));
+    if (ult.size < 2) { sinNombres.push(col); return; }
+    ED.filas.forEach(f => {
+      if ((f.valores[i] || '').trim()) return;
+      const enFila = new Set(f.valores.flatMap(v => String(v || '').split('/').map(x => norm(x))));
+      const cand = [...ult.entries()].filter(([n]) => !enFila.has(norm(n))).sort((a, b) => (a[1] || '').localeCompare(b[1] || ''));
+      if (!cand.length) return;
+      f.valores[i] = cand[0][0]; ult.set(cand[0][0], f.fecha || '9999'); llenas++;
+    });
+  });
+  pintarEditor();
+  toast(llenas ? `Se llenaron ${llenas} casillas. Revise antes de guardar.` : sinNombres.length ? `Para rotar, escriba primero los nombres de un mes en: ${sinNombres.join(', ')}` : 'No había casillas vacías', llenas ? 'ok' : '');
+}
+async function guardarTabla() {
+  const cols = ED.columnas.map(c => c.trim());
+  if (cols.some(c => !c)) return toast('Ponga nombre a todas las columnas', 'err');
+  const filas = ED.filas.filter(f => f.fecha);
+  if (!filas.length) return toast('Agregue al menos una fecha', 'err');
+  const porMes = {};
+  filas.forEach(f => (porMes[f.fecha.slice(0, 7)] ||= []).push(f));
+  const tablas = Object.keys(porMes).sort().map(mes => ({ seccion: ED.seccion, mes, columnas: cols, filas: porMes[mes] }));
+  try {
+    const r = await post('guardarTablas', { tablas });
+    ASIG = null; HIST = null; await recargarData();
+    toast(`Publicado (${r.asignaciones} asignaciones)`, 'ok'); render();
+  } catch (e) { toast(e.message, 'err'); }
+}
+async function borrarTabla(id) {
+  if (!await confirmar('¿Eliminar este programa del mes? También se borran sus asignaciones.')) return;
+  try { await post('borrarTabla', { id }); ASIG = null; HIST = null; await recargarData(); render(); } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ---------- Zoom ---------- */
