@@ -160,7 +160,7 @@ function vInicio() {
   const nombre = store.get('mi_nombre', '');
   const nombres = [...new Set([...(DATA.hermanos || []), ...DATA.asignaciones.map(a => a.hermano)])].sort();
   const mias = nombre ? DATA.asignaciones.filter(a => a.fecha >= h && norm(a.hermano).includes(norm(nombre))) : [];
-  const eventos = DATA.anuncios.filter(a => a.fecha && a.fecha >= h).slice(0, 3);
+  const eventos = DATA.anuncios.filter(a => a.fecha && (a.fechaFin || a.fecha) >= h).slice(0, 3);
   const recientes = DATA.publicaciones.slice(0, 4);
   const estaSemana = DATA.asignaciones.filter(a => a.fecha >= s.inicio && a.fecha <= s.fin).length;
 
@@ -183,17 +183,6 @@ function vInicio() {
 
   ${esIOS && !esInstalada && !store.get('ios_ok') ? `<div class="card flat small">Para instalar en iPhone: toque <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. <button class="btn btn-sm" style="margin-left:6px" onclick="store.set('ios_ok',1);render()">Entendido</button></div>` : ''}
 
-  <div class="card">
-    <h3 style="font-size:1.05rem">Mis asignaciones</h3>
-    <p class="small muted" style="margin:4px 0 10px">Escriba su nombre para ver sus próximas asignaciones.</p>
-    <form class="row" onsubmit="event.preventDefault();store.set('mi_nombre',this.n.value.trim());render()">
-      <input class="grow" name="n" type="search" list="dlNombres" placeholder="Ej. Mateo Queche" value="${esc(nombre)}" autocomplete="name" style="flex:1 1 180px">
-      <button class="btn btn-primary">Ver</button>
-    </form>
-    <datalist id="dlNombres">${nombres.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
-    ${mis}
-  </div>
-
   ${(DATA.puntos || []).length ? `<div class="h-sec">Predicando ahora <button onclick="irA('territorios')">Ver mapa</button></div>
     <div class="lista">${DATA.puntos.slice(0, 3).map(pt => `<div class="item"><span class="ico" style="color:#1f8f4e">${ICON.pin}</span><div class="grow"><div class="t">${esc(pt.nombre)}</div>
     <div class="small muted">${pt.territorio ? 'Territorio ' + esc(pt.territorio) + ' · ' : ''}${esc(haceCuanto(pt.actualizado))}</div></div>
@@ -202,8 +191,7 @@ function vInicio() {
   ${(() => { const sig = proxSalidas().filter(x => x.fecha > hoy()); return sig.length ? `<div class="h-sec">Próximo arreglo para la predicación <button onclick="irA('territorios')">Ver todos</button></div>${tarjetaSalida(sig[0])}` : ''; })()}
 
   ${eventos.length ? `<div class="h-sec">Próximos eventos <button onclick="irA('anuncios')">Ver todos</button></div>
-    <div class="lista">${eventos.map(a => `<div class="item">${fechaBox(a.fecha)}<div class="grow"><div class="t">${esc(a.titulo)}</div>
-    <div class="small muted">${esc(TIPOS_ANUNCIO[a.tipo] || 'Anuncio')}${a.hora ? ' · ' + esc(a.hora) : ''}</div></div></div>`).join('')}</div>` : ''}
+    ${eventos.map(tarjetaEvento).join('')}` : ''}
 
   <div class="h-sec">Publicado recientemente</div>
   ${recientes.length ? recientes.map(p => tarjetaPub(p, true)).join('') : '<div class="empty">Aún no hay programas publicados.</div>'}`;
@@ -241,7 +229,7 @@ function bloquePrograma() {
       <button class="btn btn-sm" ${semIdx >= ps.length - 1 ? 'disabled' : ''} onclick="semIdx++;render()" aria-label="Semana siguiente">Siguiente ›</button>
     </div>
     ${Programa.html(p, store.get('mi_nombre', ''))}
-    ${store.get('mi_nombre', '') ? '' : '<p class="small muted">Consejo: escriba su nombre en Inicio → Mis asignaciones y aparecerá resaltado en el programa.</p>'}`;
+`;
 }
 
 function segmentos(grupo, claves) {
@@ -291,18 +279,33 @@ function vAsignaciones() {
   return `<h1 class="titulo-vista">Otras asignaciones</h1>${segmentos('asignaciones', ['limpieza', 'audio_video', 'acomodadores', 'predicacion'])}${vistaSeccion(sub.asignaciones)}`;
 }
 
+/* Tarjeta de evento con el formato del calendario de la congregación */
+function tarjetaEvento(a) {
+  const pasado = (a.fechaFin || a.fecha) < hoy();
+  const horario = horarioEvento(a);
+  return `<div class="evento ${pasado ? 'pasado' : ''}">
+    <div class="row" style="gap:6px;justify-content:space-between"><div class="ev-fecha">${a.fecha ? esc(fechaEvento(a)) : ''}</div><div class="row" style="gap:4px">${chipNuevo('anuncios', a)}${pasado ? '<span class="chip">Pasado</span>' : ''}</div></div>
+    <h3 class="ev-titulo">${esc(a.titulo)}</h3>
+    ${horario ? `<div class="ev-linea">${esc(horario)}</div>` : ''}
+    ${a.lugar ? `<div class="ev-linea">${esc(a.lugar)}</div>` : ''}
+    ${a.texto ? `<p class="pre ev-texto">${esc(a.texto)}</p>` : ''}
+    ${(a.url || a.archivoId) ? (esPdf(a) ? `<button class="btn btn-sm" style="margin-top:10px" onclick="verPub('${esc(a.id)}')">Ver PDF adjunto</button>` : `<img src="${esc(srcImagen(a))}" alt="" loading="lazy" onclick="verPub('${esc(a.id)}')">`) : ''}
+  </div>`;
+}
 function vAnuncios() {
-  const h = hoy();
   const lista = DATA.anuncios;
   if (!lista.length) return `<h1 class="titulo-vista">Anuncios y eventos</h1><div class="empty">No hay anuncios por ahora.</div>`;
-  return `<h1 class="titulo-vista">Anuncios y eventos</h1>${lista.map(a => `
-    <div class="card"><div class="anuncio">${a.fecha ? fechaBox(a.fecha) : ''}<div class="grow">
-      <div class="row"><span class="chip ${a.tipo === 'anuncio' ? '' : 'gold'}">${esc(TIPOS_ANUNCIO[a.tipo] || 'Anuncio')}</span>${a.fecha && a.fecha < h ? '<span class="chip">Pasado</span>' : ''}${chipNuevo('anuncios', a)}</div>
-      <h3 style="font-size:1.05rem;margin-top:8px">${esc(a.titulo)}</h3>
-      ${a.fecha ? `<div class="small muted cap">${esc(fmtLarga(a.fecha))}${a.hora ? ' · ' + esc(a.hora) : ''}</div>` : ''}
-      ${a.texto ? `<p class="pre" style="margin:8px 0 0">${esc(a.texto)}</p>` : ''}
-      ${(a.url || a.archivoId) ? (esPdf(a) ? `<button class="btn btn-sm" style="margin-top:10px" onclick="verPub('${esc(a.id)}')">Ver PDF adjunto</button>` : `<img src="${esc(srcImagen(a))}" alt="" loading="lazy" onclick="verPub('${esc(a.id)}')">`) : ''}
-    </div></div></div>`).join('')}`;
+  const sinFecha = lista.filter(a => !a.fecha);
+  const porMes = [];
+  lista.filter(a => a.fecha).forEach(a => {
+    const m = mesEvento(a);
+    let g = porMes.find(x => x.mes === m);
+    if (!g) porMes.push(g = { mes: m, items: [] });
+    g.items.push(a);
+  });
+  return `<h1 class="titulo-vista">Anuncios y eventos</h1>
+    ${sinFecha.length ? `<h2 class="ev-mes">Avisos</h2>${sinFecha.map(tarjetaEvento).join('')}` : ''}
+    ${porMes.map(g => `<h2 class="ev-mes">${esc(g.mes)}</h2>${g.items.map(tarjetaEvento).join('')}`).join('')}`;
 }
 
 function vPreguntas() {
@@ -391,7 +394,6 @@ function tarjetasHoy() {
       ${x.nota ? `<div class="det pre" style="margin-top:4px">${esc(x.nota)}</div>` : ''}
       <div class="row" style="margin-top:12px">
         ${c ? `<button class="btn btn-w" onclick="navegarSalida('${esc(x.id)}')"><span class="ico">${ICON.ruta}</span>Cómo llegar</button>` : ''}
-        <button class="btn btn-t" onclick="compartirSalida('${esc(x.id)}')">Compartir</button>
       </div></div>`;
   }).join('');
 }

@@ -71,7 +71,7 @@ async function render() {
   try {
     if (vista === 'subir') app.innerHTML = vSubir(), initSubir();
     else if (vista === 'publicado') app.innerHTML = vPublicado();
-    else if (vista === 'anuncios') app.innerHTML = vAnuncios();
+    else if (vista === 'anuncios') { app.innerHTML = vAnuncios(); initAnuncios(); }
     else if (vista === 'asignaciones') { if (!ASIG || !HIST) { app.innerHTML = '<div class="skeleton"></div>'; ASIG ||= await post('listarAsignaciones'); HER ||= await post('listarHermanos'); HIST ||= await post('historial'); } app.innerHTML = vAsignaciones(); }
     else if (vista === 'zoom') { app.innerHTML = vZoom(); initZoom(); }
     else if (vista === 'ajustes') { app.innerHTML = '<div class="skeleton"></div>'; app.innerHTML = vAjustes(await post('ajustes')); }
@@ -248,18 +248,28 @@ function vAnuncios() {
   return `<h1 class="titulo-vista">Anuncios y eventos</h1>
   <form class="card" onsubmit="guardarAnuncio(event)">
     <label class="f"><span>Tipo</span><select name="tipo">${Object.entries(TIPOS_ANUNCIO).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
-    <label class="f"><span>Título</span><input type="text" name="titulo" required maxlength="150" placeholder="Ej. Asamblea de circuito"></label>
-    <div class="grid2"><label class="f"><span>Fecha (opcional)</span><input type="date" name="fecha"></label>
-      <label class="f"><span>Hora (opcional)</span><input type="text" name="hora" maxlength="20" placeholder="Ej. 9:00 a. m."></label></div>
-    <label class="f"><span>Detalles</span><textarea name="texto" maxlength="3000" placeholder="Lugar, horario, qué llevar…"></textarea></label>
+    <label class="f"><span>Título</span><input type="text" name="titulo" required maxlength="150" placeholder="Ej. Asamblea de circuito con el superintendente de circuito"></label>
+    <div class="grid2"><label class="f"><span>Fecha</span><input type="date" name="fecha" id="aFecha"></label>
+      <label class="f"><span>Hasta (si dura varios días)</span><input type="date" name="fechaFin" id="aFin"></label></div>
+    <label class="small row" style="gap:8px;margin:-4px 0 12px"><input type="checkbox" name="todoDia" id="aTodo"> Todo el día</label>
+    <label class="f" id="aHoraBox"><span>Hora (opcional)</span><input type="text" name="hora" maxlength="20" placeholder="Ej. 7:00 p. m."></label>
+    <label class="f"><span>Lugar (opcional)</span><input type="text" name="lugar" maxlength="200" placeholder="Ej. Salón de Asambleas de San Lucas Sacatepéquez"></label>
+    <label class="f"><span>Detalles (opcional)</span><textarea name="texto" maxlength="3000" placeholder="Qué llevar, transporte, programa…"></textarea></label>
     <label class="f"><span>Imagen o PDF (opcional)</span><input type="file" name="archivo" accept="image/*,application/pdf"></label>
     <button class="btn btn-primary btn-block" id="bAnu">Publicar anuncio</button>
   </form>
   <div class="h-sec">Anuncios activos</div>
   ${DATA.anuncios.length ? `<div class="lista">${DATA.anuncios.map(a => `<div class="item">
-    <div class="grow"><div class="t">${esc(a.titulo)}</div><div class="small muted">${esc(TIPOS_ANUNCIO[a.tipo] || '')}${a.fecha ? ' · ' + esc(fmtLarga(a.fecha)) : ''}</div></div>
+    <div class="grow"><div class="t">${esc(a.titulo)}</div><div class="small muted">${esc(TIPOS_ANUNCIO[a.tipo] || '')}${a.fecha ? ' · ' + esc(fechaEvento(a)) : ''}${horarioEvento(a) ? ' · ' + esc(horarioEvento(a)) : ''}${a.lugar ? ' · ' + esc(a.lugar) : ''}</div></div>
     <button class="x" aria-label="Eliminar" onclick="borrarAnuncio('${esc(a.id)}')">✕</button></div>`).join('')}</div>` : '<div class="empty">No hay anuncios.</div>'}
-  <p class="small muted">Los anuncios con fecha desaparecen solos 3 días después; los que no tienen fecha, después de 45 días.</p>`;
+  <p class="small muted">Los eventos se muestran agrupados por mes y desaparecen solos al día siguiente de terminar; los avisos sin fecha, después de 45 días.</p>`;
+}
+function initAnuncios() {
+  const todo = $('#aTodo'), caja = $('#aHoraBox'), tipo = $('form [name=tipo]');
+  todo.onchange = () => { caja.hidden = todo.checked; };
+  // asambleas y visitas normalmente son de todo el día
+  tipo.onchange = () => { todo.checked = ['asamblea', 'superintendente'].includes(tipo.value); todo.onchange(); };
+  $('#aFecha').onchange = () => { $('#aFin').min = $('#aFecha').value; };
 }
 async function guardarAnuncio(e) {
   e.preventDefault();
@@ -267,7 +277,9 @@ async function guardarAnuncio(e) {
   b.disabled = true; b.textContent = 'Publicando…';
   try {
     const arch = f.archivo.files[0] ? await prepararArchivo(f.archivo.files[0]) : {};
-    await post('guardarAnuncio', { tipo: f.tipo.value, titulo: f.titulo.value.trim(), fecha: f.fecha.value, hora: f.hora.value.trim(), texto: f.texto.value.trim(), ...arch });
+    if (f.fechaFin.value && f.fecha.value && f.fechaFin.value < f.fecha.value) { b.disabled = false; b.textContent = 'Publicar anuncio'; return toast('La fecha "hasta" es antes de la fecha de inicio', 'err'); }
+    await post('guardarAnuncio', { tipo: f.tipo.value, titulo: f.titulo.value.trim(), fecha: f.fecha.value, fechaFin: f.fechaFin.value, todoDia: f.todoDia.checked,
+      hora: f.hora.value.trim(), lugar: f.lugar.value.trim(), texto: f.texto.value.trim(), ...arch });
     await recargarData(); render(); toast('Anuncio publicado', 'ok');
   } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'Publicar anuncio'; }
 }

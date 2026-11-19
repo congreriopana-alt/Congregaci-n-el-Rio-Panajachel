@@ -139,7 +139,7 @@ const Demo = (() => {
       case 'data': return JSON.parse(JSON.stringify({
         congregacion: CFG.CONGREGACION,
         publicaciones: [...st.publicaciones].sort((a, b) => (b.fechaInicio || '').localeCompare(a.fechaInicio || '') || (b.creado || '').localeCompare(a.creado || '')),
-        anuncios: st.anuncios.filter(a => !a.fecha || a.fecha >= addDias(h, -3)).sort((a, b) => (a.fecha || '9999').localeCompare(b.fecha || '9999')),
+        anuncios: st.anuncios.filter(a => !a.fecha || (a.fechaFin || a.fecha) >= addDias(h, -1)).sort((a, b) => (a.fecha || '9999').localeCompare(b.fecha || '9999')),
         asignaciones: st.asignaciones.filter(a => a.fecha >= addDias(h, -7)).sort((a, b) => a.fecha.localeCompare(b.fecha)),
         ancianos: st.ancianos, hermanos: st.hermanos.map(x => x.nombre),
         puntos: puntosActivos(),
@@ -178,7 +178,8 @@ const Demo = (() => {
       }
       case 'borrarPublicacion': st.publicaciones = st.publicaciones.filter(x => x.id !== p.id); guardar(); return true;
       case 'guardarAnuncio': {
-        const o = { id: uid(), tipo: p.tipo, titulo: p.titulo, texto: p.texto || '', fecha: p.fecha || '', hora: p.hora || '', mimeType: p.mimeType || '', url: p.base64 ? `data:${p.mimeType};base64,${p.base64}` : '', creado: new Date().toISOString() };
+        const o = { id: uid(), tipo: p.tipo, titulo: p.titulo, texto: p.texto || '', fecha: p.fecha || '', hora: p.todoDia ? '' : (p.hora || ''),
+          fechaFin: p.fechaFin && p.fecha && p.fechaFin > p.fecha ? p.fechaFin : '', lugar: p.lugar || '', todoDia: p.todoDia && p.fecha ? 'si' : '', mimeType: p.mimeType || '', url: p.base64 ? `data:${p.mimeType};base64,${p.base64}` : '', creado: new Date().toISOString() };
         st.anuncios.push(o); guardar(); return o;
       }
       case 'guardarSalida': {
@@ -545,3 +546,18 @@ function leerInvitacionZoom(t) {
   if (hs.length) r.horarios = hs;
   return r;
 }
+
+
+/* ---------- Fechas de eventos, como en el calendario de la congregación ---------- */
+const DIAS_C = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const MESES_C = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function fechaEvento(a) {
+  if (!a.fecha) return '';
+  const d = parseYmd(a.fecha);
+  const uno = (x, conAnio) => `${DIAS_C[x.getDay()]}, ${x.getDate()} de ${MESES_C[x.getMonth()]}${conAnio ? ' de ' + x.getFullYear() : ''}`;
+  if (!a.fechaFin || a.fechaFin === a.fecha) return uno(d, true);
+  const f = parseYmd(a.fechaFin);
+  return `${uno(d, d.getFullYear() !== f.getFullYear())} – ${uno(f, true)}`;
+}
+const horarioEvento = a => a.todoDia ? 'Todo el día' : (a.hora || '');
+const mesEvento = a => { const d = parseYmd(a.fecha); return `${d.toLocaleDateString('es-GT', { month: 'long' })} de ${d.getFullYear()}`; };
