@@ -693,7 +693,7 @@ async function guardarTabla() {
   if (!filas.length) return toast('Agregue al menos una fecha', 'err');
   const porMes = {};
   filas.forEach(f => (porMes[f.fecha.slice(0, 7)] ||= []).push(f));
-  const tablas = Object.keys(porMes).sort().map(mes => ({ seccion: ED.seccion, mes, columnas: cols, filas: porMes[mes] }));
+  const tablas = Object.keys(porMes).sort().map(mes => ({ seccion: ED.seccion, mes, columnas: cols, filas: porMes[mes], sinAsignar: Tablas.sinAsignar(ED.seccion, cols) }));
   try {
     const r = await post('guardarTablas', { tablas });
     ASIG = null; HIST = null; await recargarData();

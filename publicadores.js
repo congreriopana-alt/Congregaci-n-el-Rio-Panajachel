@@ -179,7 +179,9 @@ function vInicio() {
   ${(() => { const pg = programaDeEstaSemana(); const dpg = pg ? parseYmd(pg.fecha) : null;
     return `<div class="hero" ${pg ? `role="button" tabindex="0" style="cursor:pointer" onclick="sub.reuniones='entresemana';semIdx=null;irA('reuniones')"` : ''}><div class="k">Esta semana</div><div class="v">${esc(fmtRango(s.inicio, s.fin))}</div>
     <div class="small" style="color:#d6deea;margin-top:4px">${pg ? `Reunión del ${DIAS[dpg.getDay()]} ${dpg.getDate()}: ${esc(pg.lectura)}${pg.presidente ? ' · Presidente ' + esc(pg.presidente) : ''} · <u>ver programa</u>`
-      : estaSemana ? `${estaSemana} asignaciones registradas` : 'Consulte los programas en Reuniones y Asignaciones'}</div></div>`; })()}
+      : estaSemana ? `${estaSemana} asignaciones registradas` : 'Consulte los programas en Reuniones y Asignaciones'}</div>
+    ${(() => { const dc = discursoDeEstaSemana(); if (!dc) return ''; const dd = parseYmd(dc.fecha);
+      return `<div class="small" style="color:#d6deea;margin-top:4px;cursor:pointer" onclick="event.stopPropagation();sub.reuniones='discursos';irA('reuniones')">Discurso del ${DIAS[dd.getDay()]} ${dd.getDate()}: ${esc(dc.tema || 'ver programa')}${dc.orador ? ' · ' + esc(dc.orador) : ''} · <u>ver</u></div>`; })()}</div>`; })()}
 
   ${esIOS && !esInstalada && !store.get('ios_ok') ? `<div class="card flat small">Para instalar en iPhone: toque <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. <button class="btn btn-sm" style="margin-left:6px" onclick="store.set('ios_ok',1);render()">Entendido</button></div>` : ''}
 
@@ -205,10 +207,23 @@ function vistaSeccion(seccion) {
   const asig = conPrograma ? [] : DATA.asignaciones.filter(a => a.seccion === seccion && a.fecha >= hoy());
   return `
     ${seccion === 'entresemana' && (DATA.programas || []).length ? bloquePrograma() : ''}
-    ${tablas.map(t => Tablas.html(t, store.get('mi_nombre', ''))).join('')}
+    ${tablas.map(t => seccion === 'discursos' ? Tablas.tarjetas(t, store.get('mi_nombre', ''), !!VER_PASADAS[t.id]) : Tablas.html(t, store.get('mi_nombre', ''), !!VER_PASADAS[t.id])).join('')}
     ${pubs.length ? `${conPrograma ? '<div class="h-sec">Archivos</div>' : ''}${pubs.map(p => tarjetaPub(p)).join('')}`
       : conPrograma ? '' : `<div class="empty">Todavía no hay programa publicado de ${esc(SECCIONES[seccion].nombre.toLowerCase())}.</div>`}
     ${asig.length ? `<div class="h-sec">Próximas asignaciones</div>${listaAsignaciones(asig, store.get('mi_nombre', ''))}` : ''}`;
+}
+
+/* Semanas que ya pasaron: ocultas, con botón para verlas */
+const VER_PASADAS = {};
+function verSemanasPasadas(id) { VER_PASADAS[id] = !VER_PASADAS[id]; render(); }
+/* Discurso público de esta semana (para la tarjeta de Inicio) */
+function discursoDeEstaSemana() {
+  const s = semana();
+  for (const t of (DATA.tablas || []).filter(t => t.seccion === 'discursos')) {
+    const f = t.filas.find(f => f.fecha >= s.inicio && f.fecha <= s.fin);
+    if (f) { const v = c => { const i = t.columnas.findIndex(x => norm(x) === c); return i >= 0 ? f.valores[i] : ''; }; return { fecha: f.fecha, tema: v('discurso'), orador: v('orador') }; }
+  }
+  return null;
 }
 
 /* Programa de entre semana separado por semana (se abre en la semana actual) */

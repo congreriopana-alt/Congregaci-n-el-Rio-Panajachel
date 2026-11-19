@@ -328,3 +328,21 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 @media (max-width: 640px) { .tp-desliza { display: block; } }
 .ed-tabla tr.ed-revisar td { background: #fff1c2; }
 .ed-tabla tr.ed-revisar .ed-fecha input { border-color: #d4a017; box-shadow: 0 0 0 2px #f5d77a; }
+/* Tablas de 2 o 3 columnas: que quepan en el teléfono sin deslizar */
+.tabla-prog.tp-pocas th { white-space: normal; }
+.tabla-prog.tp-pocas td { min-width: 0; }
+.tabla-prog.tp-pocas .tp-fecha { min-width: 74px; }
+.tp-pasadas { display: block; width: 100%; border: 0; border-top: 1px solid var(--line); background: #f7f9fc; color: var(--navy-2); font-weight: 650; font-size: .86rem; padding: 10px; cursor: pointer; }
+.disc + .tp-pasadas, .tabla-prog + .tp-pasadas { border: 1px solid var(--line); border-radius: 10px; }
+/* Discursos públicos por semana */
+.disc { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 12px; overflow: hidden; border: 1px solid var(--line); }
+.disc-cab { background: #1f3a6b; color: #fff; padding: 9px 14px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.disc-cab span::first-letter { text-transform: uppercase; }
+.disc-cab em { font-style: normal; font-size: .72rem; font-weight: 800; background: #2f8a4f; border-radius: 999px; padding: 2px 9px; }
+.disc-esta { border: 2px solid #2f8a4f; }
+.disc-esta .disc-cab { background: #2f8a4f; }
+.disc-pasada { opacity: .6; }
+.disc-tema { padding: 12px 14px 4px; font-weight: 750; font-size: 1.05rem; line-height: 1.3; }
+.disc-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; padding: 10px 14px 14px; }
+.disc-datos small { display: block; color: var(--muted); font-size: .76rem; }
+.disc-datos b { font-weight: 650; font-size: .92rem; }

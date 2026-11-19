@@ -7,9 +7,15 @@ const Tablas = (() => {
     predicacion: { titulo: 'Programa de predicación (sábados y primer domingo)', columnas: ['Conductor'], dias: 'predicacion' },
     limpieza: { titulo: 'Programa de limpieza', columnas: ['Grupo'], dias: 'reunion' },
     entresemana: { titulo: 'Reunión de entre semana', columnas: ['Asignado'], dias: 'reunion' },
-    discursos: { titulo: 'Discursos públicos', columnas: ['Orador', 'Presidente', 'Lector'], dias: 'reunion' }
+    discursos: { titulo: 'Discursos públicos', columnas: ['Discurso', 'Orador', 'Presidente', 'Lector', 'Hospitalidad', 'Discursante saliente'], dias: 'finsemana',
+      sinAsignar: ['discurso', 'hospitalidad'] }
   };
-  const SECCIONES_TABLA = ['audio_video', 'acomodadores', 'predicacion', 'limpieza'];
+  const SECCIONES_TABLA = ['discursos', 'audio_video', 'acomodadores', 'predicacion', 'limpieza'];
+  /* Columnas que no son nombres de hermanos (no crean asignación ni recordatorio) */
+  const sinAsignar = (seccion, columnas) => {
+    const lista = (CONFIG[seccion] || {}).sinAsignar || [];
+    return columnas.map((c, i) => lista.includes(norm(c)) ? i : -1).filter(i => i >= 0);
+  };
 
   /* Días de reunión: los del Zoom si están guardados; si no, jueves y sábado */
   function diasReunion(data) {
@@ -26,7 +32,10 @@ const Tablas = (() => {
     let primerDomingo = true;
     for (let d = 1; d <= ultimo; d++) {
       const f = new Date(y, m - 1, d), dw = f.getDay();
-      if (regla === 'predicacion') {
+      if (regla === 'finsemana') {
+        const fin = dias.filter(x => x === 6 || x === 0);
+        if ((fin.length ? fin : [6]).includes(dw)) out.push(ymd(f));
+      } else if (regla === 'predicacion') {
         if (dw === 6) out.push(ymd(f));
         if (dw === 0 && primerDomingo) { out.push(ymd(f)); primerDomingo = false; }
       } else if (dias.includes(dw)) out.push(ymd(f));
@@ -53,7 +62,7 @@ const Tablas = (() => {
     return c === c.toUpperCase() ? c.charAt(0) + c.slice(1).toLowerCase() : c;
   };
   const limpiarNombre = v => String(v || '').replace(/\s+/g, ' ').trim()
-    .replace(/(^|\s)[^\s\p{L}]+(?=\s|$)/gu, ' ').replace(/\s+\p{L}$/u, '').replace(/^\p{Ll}\s+/u, '').trim();
+    .replace(/(^|\s)[^\s\p{L}\d¿?¡!]+(?=\s|$)/gu, ' ').replace(/\s+\p{L}$/u, '').replace(/^\p{Ll}\s+/u, '').trim();
 
   /* Filas de casillas (de Excel, de una imagen o de texto) → columnas y filas con fecha */
   function leerCeldas(celdas, anioBase = new Date().getFullYear()) {
@@ -104,23 +113,43 @@ const Tablas = (() => {
   }
 
   /* Tabla para los publicadores, con la semana actual y hoy resaltados */
-  function html(t, resaltar = '') {
+  function html(t, resaltar = '', verPasadas = false) {
     const cfg = CONFIG[t.seccion] || {};
     const s = semana(), h = hoy(), r = norm(resaltar);
+    const pasadas = t.filas.filter(f => f.fecha < s.inicio).length;
+    const filas = verPasadas ? t.filas : t.filas.filter(f => f.fecha >= s.inicio);
     const nom = v => esc(v).split(/\s*\/\s*/).map(n => r && r.length >= 3 && norm(n).includes(r) ? `<span class="yo-nombre">${n}</span>` : n).join('<br>');
-    return `<div class="tabla-prog">
+    return `<div class="tabla-prog ${t.columnas.length <= 3 ? 'tp-pocas' : ''}">
       <div class="tp-tit">${esc(cfg.titulo || 'Programa')}</div>
       <div class="tp-sub">${esc(CFG.CONGREGACION || '')} · ${esc(nombreMes(t.mes))}</div>
       ${t.columnas.length > 2 ? '<div class="tp-desliza">Deslice la tabla para ver todas las columnas →</div>' : ''}
       <div class="tp-scroll"><table>
         <thead><tr><th class="tp-fecha">Fecha</th>${t.columnas.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
-        <tbody>${t.filas.map(f => {
+        <tbody>${filas.map(f => {
           const d = parseYmd(f.fecha);
           const clase = f.fecha === h ? 'tp-hoy' : (f.fecha >= s.inicio && f.fecha <= s.fin) ? 'tp-semana' : f.fecha < h ? 'tp-pasada' : '';
           return `<tr class="${clase}"><td class="tp-fecha"><b>${d.getDate()} ${esc(MESES[d.getMonth()].slice(0, 3))}</b><span>${esc(DIAS[d.getDay()])}</span>${f.fecha === h ? '<em>Hoy</em>' : clase === 'tp-semana' ? '<em>Esta semana</em>' : ''}</td>
             ${t.columnas.map((c, i) => `<td>${nom(f.valores[i] || '')}</td>`).join('')}</tr>`;
-        }).join('')}</tbody></table></div></div>`;
+        }).join('')}</tbody></table></div>
+      ${pasadas ? `<button class="tp-pasadas" onclick="verSemanasPasadas('${esc(t.id)}')">${verPasadas ? 'Ocultar las semanas pasadas' : `Ver ${pasadas} fecha${pasadas === 1 ? '' : 's'} que ya pasaron`}</button>` : ''}</div>`;
   }
 
-  return { CONFIG, SECCIONES_TABLA, fechasDelMes, nombreMes, leerFilas, leerCeldas, fechaDe, html, diasReunion };
+  /* Discursos públicos: una tarjeta por semana (la de esta semana primero y resaltada) */
+  function tarjetas(t, resaltar = '', verPasadas = false) {
+    const s = semana(), r = norm(resaltar);
+    const nom = v => r && r.length >= 3 && norm(v).includes(r) ? `<span class="yo-nombre">${esc(v)}</span>` : esc(v);
+    const iDisc = t.columnas.findIndex(c => norm(c) === 'discurso');
+    const pasadas = t.filas.filter(f => f.fecha < s.inicio).length;
+    const filas = verPasadas ? t.filas : t.filas.filter(f => f.fecha >= s.inicio);
+    return filas.map(f => {
+      const d = parseYmd(f.fecha), esta = f.fecha >= s.inicio && f.fecha <= s.fin, pasada = f.fecha < s.inicio;
+      return `<div class="disc ${esta ? 'disc-esta' : ''} ${pasada ? 'disc-pasada' : ''}">
+        <div class="disc-cab"><span>${esc(DIAS[d.getDay()])} ${d.getDate()} de ${esc(MESES[d.getMonth()])}</span>${esta ? '<em>Esta semana</em>' : ''}</div>
+        ${iDisc >= 0 && f.valores[iDisc] ? `<div class="disc-tema">${esc(f.valores[iDisc])}</div>` : ''}
+        <div class="disc-datos">${t.columnas.map((c, i) => i === iDisc || !f.valores[i] ? '' : `<div><small>${esc(c)}</small><b>${nom(f.valores[i])}</b></div>`).join('')}</div>
+      </div>`;
+    }).join('') + (pasadas ? `<button class="tp-pasadas" style="margin-bottom:14px" onclick="verSemanasPasadas('${esc(t.id)}')">${verPasadas ? 'Ocultar las semanas pasadas' : `Ver ${pasadas} semana${pasadas === 1 ? '' : 's'} que ya pasaron`}</button>` : '');
+  }
+
+  return { CONFIG, SECCIONES_TABLA, fechasDelMes, nombreMes, leerFilas, leerCeldas, fechaDe, html, tarjetas, diasReunion, sinAsignar };
 })();

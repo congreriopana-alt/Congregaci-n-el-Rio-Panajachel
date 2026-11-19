@@ -204,7 +204,7 @@ const Demo = (() => {
           st.asignaciones = st.asignaciones.filter(a => !(a.origen === 'tabla' && a.seccion === t.seccion && a.fecha.slice(0, 7) === t.mes));
           const filas = (t.filas || []).filter(f => f.fecha && f.fecha.slice(0, 7) === t.mes).sort((a, b) => a.fecha.localeCompare(b.fecha));
           st.tablas.push({ id: uid(), seccion: t.seccion, mes: t.mes, columnas: t.columnas, filas, creado: ahora });
-          filas.forEach(f => f.valores.forEach((v, i) => String(v || '').split('/').map(x => x.trim()).filter(Boolean).forEach(nm => {
+          filas.forEach(f => f.valores.forEach((v, i) => (t.sinAsignar || []).includes(i) ? null : String(v || '').split('/').map(x => x.trim()).filter(Boolean).forEach(nm => {
             st.asignaciones.push({ id: uid(), fecha: f.fecha, seccion: t.seccion, asignacion: t.columnas[i], hermano: nm, creado: ahora, origen: 'tabla' }); n++;
           })));
         });
