@@ -38,35 +38,69 @@ const Tablas = (() => {
   /* Leer fechas y nombres de un texto (copiado de Word/Excel) o de las líneas de un PDF */
   const reDia = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)$/i;
   function fechaDe(t, anioBase) {
-    t = String(t).trim();
-    let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
-    if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${z2(m[2])}-${z2(m[1])}`;
-    m = t.match(/^(\d{1,2})\s+de\s+([a-záéíóú]+)(?:\s+(?:de|del)\s+(\d{4}))?$/i);
-    if (m) { const mes = MESES.indexOf(norm(m[2])); if (mes >= 0) return `${m[3] || anioBase}-${z2(mes + 1)}-${z2(m[1])}`; }
-    m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    t = String(t || '').trim();
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m) return t;
+    m = t.match(/(?:^|\D)(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:\D|$)/);
+    if (m && +m[2] >= 1 && +m[2] <= 12 && +m[1] >= 1 && +m[1] <= 31) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${z2(m[2])}-${z2(m[1])}`;
+    m = t.match(/(\d{1,2})\s+de\s+([a-záéíóú]+)(?:\s+(?:de|del)\s+(\d{4}))?/i);
+    if (m) { const mes = MESES.indexOf(norm(m[2])); if (mes >= 0) return `${m[3] || anioBase}-${z2(mes + 1)}-${z2(m[1])}`; }
     return null;
   }
-  function leerFilas(lineas, anioBase = new Date().getFullYear()) {
-    const filas = [];
-    lineas.forEach(l => {
-      // celdas: tabulador o 2+ espacios
-      let celdas = l.split(/\t| {2,}/).map(c => c.trim()).filter(Boolean);
-      if (celdas.length < 2) return;
-      let fecha = null, resto = [];
-      celdas.forEach(c => {
-        if (!fecha) { const f = fechaDe(c, anioBase); if (f) { fecha = f; return; } }
-        if (reDia.test(c)) return;
-        if (fecha) resto.push(c);
-      });
-      // "Sabado 7/11/2026 Nelson Flores" en una sola celda
-      if (!fecha) {
-        const m = l.match(/(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\s+(.+)$/);
-        if (m) { fecha = fechaDe(m[1], anioBase); resto = m[2].split(/\t| {2,}/).map(c => c.trim()).filter(Boolean); }
+  const esDia = c => reDia.test(norm(c).replace(/[^a-z]/g, '')) || /^(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(norm(c));
+  const nombreCol = c => {
+    c = String(c || '').replace(/[^\p{L}\d ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+    return c === c.toUpperCase() ? c.charAt(0) + c.slice(1).toLowerCase() : c;
+  };
+  const limpiarNombre = v => String(v || '').replace(/\s+/g, ' ').trim()
+    .replace(/(^|\s)[^\s\p{L}]+(?=\s|$)/gu, ' ').replace(/\s+\p{L}$/u, '').replace(/^\p{Ll}\s+/u, '').trim();
+
+  /* Filas de casillas (de Excel, de una imagen o de texto) → columnas y filas con fecha */
+  function leerCeldas(celdas, anioBase = new Date().getFullYear()) {
+    let iFecha = -1, iDia = -1, columnas = null, idx = null;
+    for (const r of celdas) {
+      const j = r.findIndex(c => /^fecha$/i.test(nombreCol(c)));
+      if (j >= 0) {
+        iFecha = j; iDia = r.findIndex(c => /^d[ií]a$/i.test(nombreCol(c)));
+        idx = r.map((c, i) => i).filter(i => i !== iFecha && i !== iDia && nombreCol(r[i]));
+        columnas = idx.map(i => nombreCol(r[i]));
+        break;
       }
-      if (fecha && resto.length) filas.push({ fecha, valores: resto });
+    }
+    const filas = [];
+    celdas.forEach(r => {
+      let fecha = iFecha >= 0 ? fechaDe(r[iFecha], anioBase) : null;
+      if (!fecha) { for (const c of r) { fecha = fechaDe(c, anioBase); if (fecha) break; } }
+      if (!fecha) return;
+      let valores;
+      if (idx) valores = idx.map(i => limpiarNombre(r[i]));
+      else valores = r.filter(c => c && !fechaDe(c, anioBase) && !esDia(c)).map(limpiarNombre);
+      // si la tabla trae el día (jueves, sábado…) y no coincide con la fecha leída, se marca para revisar
+      let revisar = false;
+      const diaCelda = iDia >= 0 ? norm(r[iDia]).replace(/[^a-z]/g, '') : (r.map(c => norm(c).replace(/[^a-z]/g, '')).find(c => /^(lunes|martes|miercoles|jueves|viernes|sabado|domingo)/.test(c)) || '');
+      const m = diaCelda.match(/^(domingo|lunes|martes|miercoles|jueves|viernes|sabado)/);
+      if (m) {
+        const esperado = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'].indexOf(m[1]);
+        if (parseYmd(fecha).getDay() !== esperado) {
+          // intento: el mismo mes con el día más cercano que sí cae en ese día de la semana (ej. 05 leído en vez de 03)
+          const d = parseYmd(fecha), cand = [-2, 2, -1, 1, -3, 3].map(k => { const x = new Date(d); x.setDate(d.getDate() + k); return x; })
+            .find(x => x.getDay() === esperado && x.getMonth() === d.getMonth());
+          if (cand) fecha = ymd(cand);
+          revisar = true;
+        }
+      }
+      if (valores.some(Boolean)) filas.push({ fecha, valores, revisar });
     });
-    return filas;
+    return { columnas, filas };
+  }
+  function leerFilas(lineas, anioBase = new Date().getFullYear()) {
+    const celdas = lineas.map(l => {
+      let c = l.split(/\t| {2,}/).map(x => x.trim()).filter(Boolean);
+      // "Sabado 7/11/2026 Nelson Flores" en una sola celda
+      if (c.length === 1) { const m = l.match(/^(.*?)(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\s+(.+)$/); if (m) c = [m[1], m[2], m[3]].map(x => x.trim()).filter(Boolean); }
+      return c;
+    }).filter(c => c.length >= 2);
+    return leerCeldas(celdas, anioBase).filas;
   }
 
   /* Tabla para los publicadores, con la semana actual y hoy resaltados */
@@ -88,5 +122,5 @@ const Tablas = (() => {
         }).join('')}</tbody></table></div></div>`;
   }
 
-  return { CONFIG, SECCIONES_TABLA, fechasDelMes, nombreMes, leerFilas, fechaDe, html, diasReunion };
+  return { CONFIG, SECCIONES_TABLA, fechasDelMes, nombreMes, leerFilas, leerCeldas, fechaDe, html, diasReunion };
 })();

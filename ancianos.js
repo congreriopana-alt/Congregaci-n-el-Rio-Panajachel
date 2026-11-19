@@ -532,7 +532,7 @@ function vTablas() {
     <div class="grid2"><label class="f"><span>Programa</span><select id="tSec">${Tablas.SECCIONES_TABLA.map(k => `<option value="${k}" ${k === sec ? 'selected' : ''}>${esc(SECCIONES[k].nombre)}</option>`).join('')}</select></label>
       <label class="f"><span>Mes</span><input type="month" id="tMes" value="${esc(mes)}"></label></div>
     <div class="row" style="gap:6px;margin-bottom:10px">
-      <label class="btn btn-sm">Leer PDF<input type="file" accept="application/pdf" id="tPdf" hidden></label>
+      <label class="btn btn-sm btn-primary">Leer archivo (PDF, Excel o imagen)<input type="file" accept="application/pdf,image/*,.xlsx,.xls,.csv,.ods" id="tPdf" hidden></label>
       <button class="btn btn-sm" type="button" onclick="pegarTabla()">Pegar de Word o Excel</button>
       <button class="btn btn-sm" type="button" onclick="rellenarRotacion()">Rellenar con rotación</button>
       <button class="btn btn-sm" type="button" onclick="fechasDeNuevo()">Fechas del mes</button>
@@ -584,25 +584,71 @@ function pintarEditor() {
   ED.filas.sort((a, b) => (a.fecha || '9999').localeCompare(b.fecha || '9999'));
   $('#edTabla').innerHTML = `<thead><tr><th>Fecha</th>${ED.columnas.map((c, i) => `<th><input class="ed-col" value="${esc(c)}" onchange="ED.columnas[${i}]=this.value.trim()" aria-label="Nombre de la columna">
       ${ED.columnas.length > 1 ? `<button class="x" type="button" title="Quitar columna" onclick="ED.columnas.splice(${i},1);ED.filas.forEach(f=>f.valores.splice(${i},1));pintarEditor()">✕</button>` : ''}</th>`).join('')}<th></th></tr></thead>
-    <tbody>${ED.filas.map((f, r) => `<tr><td class="ed-fecha"><input type="date" value="${esc(f.fecha)}" onchange="ED.filas[${r}].fecha=this.value;pintarEditor()"><span>${f.fecha ? esc(DIAS[parseYmd(f.fecha).getDay()]) : ''}</span></td>
+    <tbody>${ED.filas.map((f, r) => `<tr class="${f.revisar ? 'ed-revisar' : ''}"><td class="ed-fecha"><input type="date" value="${esc(f.fecha)}" onchange="ED.filas[${r}].fecha=this.value;ED.filas[${r}].revisar=false;pintarEditor()"><span>${f.fecha ? esc(DIAS[parseYmd(f.fecha).getDay()]) : ''}</span></td>
       ${ED.columnas.map((c, i) => `<td><input list="dlNomT" value="${esc(f.valores[i] || '')}" onchange="ED.filas[${r}].valores[${i}]=this.value.trim()" aria-label="${esc(c)}"></td>`).join('')}
       <td><button class="x" type="button" title="Quitar fecha" onclick="ED.filas.splice(${r},1);pintarEditor()">✕</button></td></tr>`).join('')}</tbody>`;
 }
-function aplicarFilas(filas, origen) {
+function aplicarFilas(filas, origen, columnas, aviso = '') {
   if (!filas.length) return toast(`No se encontraron fechas con nombres en ${origen}`, 'err');
   const max = Math.max(...filas.map(f => f.valores.length));
+  if (columnas && columnas.length >= max && columnas.every(Boolean)) ED.columnas = [...columnas];
   while (ED.columnas.length < max) ED.columnas.push('Columna ' + (ED.columnas.length + 1));
-  ED.filas = filas.map(f => ({ fecha: f.fecha, valores: ED.columnas.map((c, i) => f.valores[i] || '') }));
+  ED.filas = filas.map(f => ({ fecha: f.fecha, valores: ED.columnas.map((c, i) => f.valores[i] || ''), revisar: f.revisar }));
+  const dudosas = filas.filter(f => f.revisar).map(f => fmtFecha(f.fecha, { weekday: 'long', day: 'numeric', month: 'long' }));
+  if (dudosas.length) aviso = `<b>Revise ${dudosas.length === 1 ? 'esta fecha' : 'estas fechas'}:</b> ${dudosas.join(', ')} (el día de la semana no coincidía con el número leído y se ajustó). ` + aviso;
   const meses = [...new Set(filas.map(f => f.fecha.slice(0, 7)))].sort();
   ED.mes = meses[0]; $('#tMes').value = meses[0];
-  $('#edEstado').textContent = `Se leyeron ${filas.length} fechas${meses.length > 1 ? ' de ' + meses.map(Tablas.nombreMes).join(' y ') + ' (se guardará un programa por mes)' : ''}. Revise y toque Guardar.`;
+  $('#edEstado').innerHTML = `Se leyeron <b>${filas.length} fechas</b>${meses.length > 1 ? ' de ' + meses.map(Tablas.nombreMes).join(' y ') + ' (se guardará un programa por mes)' : ''}. Revise y toque Guardar.${aviso ? `<div class="hist alerta" style="margin-top:6px">${aviso}</div>` : ''}`;
   pintarEditor();
+}
+/* Corrige nombres leídos de una imagen con los nombres que la app ya conoce (ej. "Frankilyn" → "Franklyn") */
+function distancia(a, b) {
+  const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[m][n];
+}
+function corregirNombres(filas) {
+  const conocidos = nombresConocidos();
+  let n = 0;
+  filas.forEach(f => { f.valores = f.valores.map(v => String(v || '').split('/').map(x => {
+    x = x.trim(); const nx = norm(x);
+    if (!nx || conocidos.some(k => norm(k) === nx)) return x;
+    let mejor = null, dm = 99;
+    conocidos.forEach(k => { const dd = distancia(nx, norm(k)); if (dd < dm) { dm = dd; mejor = k; } });
+    if (mejor && dm <= Math.max(1, Math.floor(nx.length * 0.2))) { n++; return mejor; }
+    return x;
+  }).join(' / ')); });
+  return n;
 }
 async function leerPdfTabla(e) {
   const f = e.target.files[0]; if (!f) return;
-  $('#edEstado').textContent = 'Leyendo el PDF…';
-  try { const lineas = await Programa.leerLineas(await f.arrayBuffer()); aplicarFilas(Tablas.leerFilas(lineas, +ED.mes.slice(0, 4)), 'el PDF'); }
-  catch (err) { toast('No se pudo leer el PDF: ' + err.message, 'err'); }
+  const anio = +ED.mes.slice(0, 4), estado = t => { $('#edEstado').textContent = t; };
+  try {
+    if (Lector.esExcel(f)) {
+      estado('Leyendo el Excel…');
+      const r = Tablas.leerCeldas(await Lector.leerExcel(f), anio);
+      aplicarFilas(r.filas, 'el Excel', r.columnas);
+    } else if (Lector.esImagen(f)) {
+      estado('Leyendo la imagen…');
+      const r = Tablas.leerCeldas(await Lector.leerImagen(f, estado), anio);
+      const corr = corregirNombres(r.filas);
+      aplicarFilas(r.filas, 'la imagen', r.columnas, `Los nombres se leyeron de una imagen: revise cada casilla, puede haber letras equivocadas${corr ? ` (se corrigieron ${corr} con los nombres que la app ya conoce)` : ''}. Si falta una fecha, agréguela a mano.`);
+    } else {
+      estado('Leyendo el PDF…');
+      const lineas = await Programa.leerLineas(await f.arrayBuffer());
+      const celdas = lineas.map(l => l.split(/\t| {2,}/).map(x => x.trim()).filter(Boolean)).filter(c => c.length >= 2);
+      let r = Tablas.leerCeldas(celdas, anio);
+      if (!r.filas.length) r = { filas: Tablas.leerFilas(lineas, anio), columnas: null };
+      if (r.filas.length) aplicarFilas(r.filas, 'el PDF', r.columnas);
+      else {
+        // el PDF no trae texto (es una imagen guardada como PDF): se lee como imagen
+        const ri = Tablas.leerCeldas(await Lector.leerPdfImagen(f, estado), anio);
+        const corr = corregirNombres(ri.filas);
+        aplicarFilas(ri.filas, 'el PDF', ri.columnas, `Este PDF es una imagen: los nombres se leyeron con reconocimiento de texto. Revise cada casilla${corr ? ` (se corrigieron ${corr} con los nombres que la app ya conoce)` : ''}. Si falta una fecha, agréguela a mano.`);
+      }
+    }
+  } catch (err) { estado(''); toast('No se pudo leer el archivo: ' + err.message, 'err'); }
   e.target.value = '';
 }
 function pegarTabla() {

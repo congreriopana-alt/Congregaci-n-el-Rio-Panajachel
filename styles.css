@@ -326,3 +326,5 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .tabla-prog td.tp-fecha em { white-space: nowrap; font-size: .62rem; }
 .tp-desliza { display: none; text-align: right; font-size: .75rem; color: var(--muted); padding: 6px 10px 0; }
 @media (max-width: 640px) { .tp-desliza { display: block; } }
+.ed-tabla tr.ed-revisar td { background: #fff1c2; }
+.ed-tabla tr.ed-revisar .ed-fecha input { border-color: #d4a017; box-shadow: 0 0 0 2px #f5d77a; }
