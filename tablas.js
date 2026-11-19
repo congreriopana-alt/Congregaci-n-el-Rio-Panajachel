@@ -71,7 +71,8 @@ const Tablas = (() => {
       const j = r.findIndex(c => /^fecha$/i.test(nombreCol(c)));
       if (j >= 0) {
         iFecha = j; iDia = r.findIndex(c => /^d[ií]a$/i.test(nombreCol(c)));
-        idx = r.map((c, i) => i).filter(i => i !== iFecha && i !== iDia && nombreCol(r[i]));
+        const ult = Math.max(...r.map((c, i) => nombreCol(c) ? i : -1));
+        idx = r.map((c, i) => i).filter(i => i !== iFecha && i !== iDia && i <= Math.max(ult, r.length - 1));
         columnas = idx.map(i => nombreCol(r[i]));
         break;
       }
@@ -151,5 +152,44 @@ const Tablas = (() => {
     }).join('') + (pasadas ? `<button class="tp-pasadas" style="margin-bottom:14px" onclick="verSemanasPasadas('${esc(t.id)}')">${verPasadas ? 'Ocultar las semanas pasadas' : `Ver ${pasadas} semana${pasadas === 1 ? '' : 's'} que ya pasaron`}</button>` : '');
   }
 
-  return { CONFIG, SECCIONES_TABLA, fechasDelMes, nombreMes, leerFilas, leerCeldas, fechaDe, html, tarjetas, diasReunion, sinAsignar };
+  /* ---------- Discursos públicos en bloques ("7 de noviembre • Discurso No. 56", tema, Orador:, Presidente:…) ---------- */
+  const ETIQ = ['orador', 'presidente', 'lector', 'hospitalidad', 'discursante'];
+  function campo(t, re) {
+    const m = t.match(re);
+    if (!m) return '';
+    // el valor termina donde empieza otra etiqueta (columnas lado a lado) o en un hueco grande
+    return m[1].split(/\s{3,}|\t|\s+(?=(?:Orador|Presidente|Lector|Hospitalidad|Discursa\w*)\b)/i)[0].replace(/\s+/g, ' ').replace(/[|_—\[\]]+/g, '').trim();
+  }
+  function leerBloqueDiscurso(t, anioBase) {
+    const mf = t.match(/(\d{1,2})\s+de\s+([a-záéíóú]+)/i);
+    if (!mf) return null;
+    const mes = MESES.indexOf(norm(mf[2]));
+    if (mes < 0) return null;
+    const num = (t.match(/Discurso\s*N\s*[oº°.]*\s*(\d+)/i) || [])[1] || '';
+    let tema = ([...t.matchAll(/[“"«]\s*([^”"»\n]{4,}?)\s*[”"»]/g)].map(m => m[1]).find(x => !/Discurso\s*N/i.test(x)) || '');
+    if (!tema) {
+      const l = t.split('\n').map(x => x.trim()).filter(Boolean);
+      const i = l.findIndex(x => /Discurso\s*N/i.test(x));
+      const sig = i >= 0 ? l.slice(i + 1).find(x => !/Discurso\s*N/i.test(x)) : null;
+      if (sig && !/:/.test(sig) && !/^\(?congregaci/i.test(sig)) tema = sig.replace(/^["“”«»]+|["“”«»]+$/g, '');
+    }
+    const orador = campo(t, /Orador\s*:\s*(.+)/i);
+    let saliente = campo(t, /Discursa\w*\s+\S+\s*:\s*(.+)/i);
+    const cong = (t.match(/[([]congregaci[oó]n\s+([^)\]]+)[)\]]/i) || [])[1];
+    if (saliente && cong && !/\(/.test(saliente)) saliente += ` (${cong.replace(/\s+/g, ' ').trim()})`;
+    return {
+      fecha: `${anioBase}-${z2(mes + 1)}-${z2(mf[1])}`,
+      valores: [[num ? `No. ${num}` : '', tema.replace(/\s+/g, ' ').trim()].filter(Boolean).join(' '),
+        orador, campo(t, /Presidente\s*:\s*(.+)/i), campo(t, /Lector\s*:\s*(.+)/i), campo(t, /Hospitalidad\s*:\s*(.+)/i), saliente]
+    };
+  }
+  /* Un texto con varios bloques (PDF con texto o lectura completa de una imagen) */
+  function leerDiscursos(texto, anioBase = new Date().getFullYear()) {
+    const partes = String(texto).split(/\n(?=[^\n]*\d{1,2}\s+de\s+[a-záéíóú]+[^\n]*Discurso)/i);
+    return partes.map(p => leerBloqueDiscurso(p, anioBase)).filter(Boolean)
+      .filter((f, i, a) => a.findIndex(x => x.fecha === f.fecha) === i);
+  }
+  const faltan = f => f.valores.slice(0, 4).filter(v => !v).length;
+
+  return { leerDiscursos, leerBloqueDiscurso, faltan, CONFIG, SECCIONES_TABLA, fechasDelMes, nombreMes, leerFilas, leerCeldas, fechaDe, html, tarjetas, diasReunion, sinAsignar };
 })();

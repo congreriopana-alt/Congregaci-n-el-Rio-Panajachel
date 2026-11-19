@@ -346,3 +346,7 @@ code.k { background: #f1ece2; padding: 1px 6px; border-radius: 6px; font-size: .
 .disc-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; padding: 10px 14px 14px; }
 .disc-datos small { display: block; color: var(--muted); font-size: .76rem; }
 .disc-datos b { font-weight: 650; font-size: .92rem; }
+details.archivos { margin: 6px 0 14px; }
+details.archivos > summary { cursor: pointer; color: var(--navy-2); font-weight: 650; font-size: .9rem; padding: 10px 4px; list-style: none; }
+details.archivos > summary::before { content: '▸ '; }
+details.archivos[open] > summary::before { content: '▾ '; }

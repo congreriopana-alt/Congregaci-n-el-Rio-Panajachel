@@ -208,7 +208,7 @@ function vistaSeccion(seccion) {
   return `
     ${seccion === 'entresemana' && (DATA.programas || []).length ? bloquePrograma() : ''}
     ${tablas.map(t => seccion === 'discursos' ? Tablas.tarjetas(t, store.get('mi_nombre', ''), !!VER_PASADAS[t.id]) : Tablas.html(t, store.get('mi_nombre', ''), !!VER_PASADAS[t.id])).join('')}
-    ${pubs.length ? `${conPrograma ? '<div class="h-sec">Archivos</div>' : ''}${pubs.map(p => tarjetaPub(p)).join('')}`
+    ${pubs.length ? (conPrograma ? `<details class="archivos"><summary>Ver ${pubs.length === 1 ? 'el archivo original' : `los ${pubs.length} archivos originales`} (imagen o PDF)</summary>${pubs.map(p => tarjetaPub(p)).join('')}</details>` : pubs.map(p => tarjetaPub(p)).join(''))
       : conPrograma ? '' : `<div class="empty">Todavía no hay programa publicado de ${esc(SECCIONES[seccion].nombre.toLowerCase())}.</div>`}
     ${asig.length ? `<div class="h-sec">Próximas asignaciones</div>${listaAsignaciones(asig, store.get('mi_nombre', ''))}` : ''}`;
 }

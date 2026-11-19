@@ -120,7 +120,82 @@ const Lector = (() => {
     return filas;
   }
 
+  /* ---------- Discursos públicos en bloques: se detecta cada franja azul de encabezado y se lee el bloque ---------- */
+  async function aCanvas(src, minAncho = 1200) {
+    const bmp = src instanceof HTMLCanvasElement ? src : await createImageBitmap(src);
+    const k = Math.min(4, Math.max(1, minAncho / bmp.width));
+    const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+    return cv;
+  }
+  /* Borra los bordes finos de los recuadros (confunden al lector); deja el texto y las franjas gruesas */
+  function borrarLineasFinas(c) {
+    const ctx = c.getContext('2d', { willReadFrequently: true }), W = c.width, H = c.height;
+    const id = ctx.getImageData(0, 0, W, H), d = id.data;
+    const tinta = i => { const l = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; return l < 200 || (d[i + 2] - d[i] > 50); };
+    const filas = [];
+    for (let y = 0; y < H; y++) { let n = 0; for (let x = 0; x < W; x++) if (tinta((y * W + x) * 4)) n++; if (n > W * 0.5) filas.push(y); }
+    agrupar(filas).filter(b => b.b - b.a <= 6).forEach(b => { for (let y = Math.max(0, b.a - 1); y <= Math.min(H - 1, b.b + 1); y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; d[i] = d[i + 1] = d[i + 2] = 255; } });
+    const cols = [];
+    for (let x = 0; x < W; x++) { let run = 0, max = 0; for (let y = 0; y < H; y++) { if (tinta((y * W + x) * 4)) { run++; if (run > max) max = run; } else run = 0; } if (max > H * 0.25) cols.push(x); }
+    agrupar(cols).filter(b => b.b - b.a <= 6).forEach(b => { for (let x = Math.max(0, b.a - 1); x <= Math.min(W - 1, b.b + 1); x++) for (let y = 0; y < H; y++) { const i = (y * W + x) * 4; if (!(d[i + 2] - d[i] > 50 && d[i + 2] > 120 && y < H * 0.25)) { d[i] = d[i + 1] = d[i + 2] = 255; } } });
+    ctx.putImageData(id, 0, 0);
+  }
+  async function leerDiscursosImagen(src, anioBase, progreso = () => {}) {
+    progreso('Preparando la imagen…');
+    const cv = await aCanvas(src, 1300), W = cv.width, H = cv.height;
+    const d = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+    const filas = [];
+    for (let y = 0; y < H; y++) {
+      let n = 0;
+      for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; if (d[i + 2] > 120 && d[i + 2] - d[i] > 50) n++; }
+      if (n > W * 0.45) filas.push(y);
+    }
+    const bandas = agrupar(filas).filter(b => b.b - b.a >= Math.max(8, H * 0.006));
+    progreso('Cargando el lector de texto (la primera vez tarda un poco)…');
+    const w = await lectorTexto();
+    const leer = async (canvas, psm) => { await w.setParameters({ tessedit_pageseg_mode: psm }); const { data } = await w.recognize(canvas); await w.setParameters({ tessedit_pageseg_mode: '6' }); return data.text; };
+    if (!bandas.length) {
+      progreso('Leyendo el texto…');
+      return Tablas.leerDiscursos(await leer(cv, '6'), anioBase);
+    }
+    const out = [];
+    for (let i = 0; i < bandas.length; i++) {
+      progreso(`Leyendo el bloque ${i + 1} de ${bandas.length}…`);
+      const y0 = Math.max(0, bandas[i].a - 3), y1 = i + 1 < bandas.length ? bandas[i + 1].a - 3 : H;
+      const c = document.createElement('canvas'); c.width = W; c.height = y1 - y0;
+      c.getContext('2d', { willReadFrequently: true }).drawImage(cv, 0, y0, W, y1 - y0, 0, 0, W, y1 - y0);
+      borrarLineasFinas(c);
+      let f = Tablas.leerBloqueDiscurso(await leer(c, '6'), anioBase);
+      if (!f || Tablas.faltan(f) || f.valores.some(v => !v)) {
+        // segunda lectura con otro modo; se combinan las dos para completar lo que faltó
+        const g = Tablas.leerBloqueDiscurso(await leer(c, '4'), anioBase);
+        if (!f) f = g;
+        else if (g) f.valores = f.valores.map((v, j) => v || g.valores[j]);
+      }
+      if (f) out.push(f);
+    }
+    return out.filter((f, i, a) => a.findIndex(x => x.fecha === f.fecha) === i);
+  }
+
   /* PDF que en realidad es una imagen (sin texto): se dibuja cada página y se lee como imagen */
+  async function pdfACanvas(file) {
+    const pdfjs = await import(base() + 'pdfjs/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = base() + 'pdfjs/pdf.worker.min.mjs';
+    const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    const out = [];
+    for (let n = 1; n <= Math.min(doc.numPages, 4); n++) {
+      const pag = await doc.getPage(n), v1 = pag.getViewport({ scale: 1 });
+      const vp = pag.getViewport({ scale: Math.min(4, 1300 / Math.max(v1.width, v1.height)) });
+      const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+      await pag.render({ canvasContext: ctx, viewport: vp }).promise;
+      out.push(cv);
+    }
+    return out;
+  }
   async function leerPdfImagen(file, progreso = () => {}) {
     progreso('El PDF es una imagen; preparándolo…');
     const pdfjs = await import(base() + 'pdfjs/pdf.min.mjs');
@@ -141,5 +216,5 @@ const Lector = (() => {
 
   const esImagen = f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
   const esExcel = f => /\.(xlsx|xls|xlsm|ods|csv)$/i.test(f.name) || /sheet|excel|csv/i.test(f.type);
-  return { leerExcel, leerImagen, leerPdfImagen, esImagen, esExcel, limpiar };
+  return { leerExcel, leerImagen, leerPdfImagen, leerDiscursosImagen, pdfACanvas, esImagen, esExcel, limpiar };
 })();

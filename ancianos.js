@@ -225,6 +225,7 @@ function vPublicado() {
   ${progs.length ? `<div class="h-sec">Reunión de entre semana · por semana</div><div class="lista">${progs.map(x => `<div class="item">
       <div class="grow" style="cursor:pointer" onclick="verProgramaModal((DATA.programas||[]).find(p=>p.id==='${esc(x.id)}'))"><div class="t cap">${esc(fmtFecha(x.fecha, { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
       <div class="small muted">${esc(x.lectura)} · Presidente ${esc(x.presidente || '—')}${x.inicio <= hoy() && x.fin >= hoy() ? ' · <b style="color:var(--ok)">esta semana</b>' : ''}</div></div>
+      <button class="btn btn-sm" onclick="editarPrograma('${esc(x.id)}')">Editar</button>
       <button class="x" aria-label="Eliminar semana" onclick="borrarPrograma('${esc(x.id)}')">✕</button></div>`).join('')}</div>` : ''}
   ${Object.keys(SECCIONES).map(sec => {
     const l = pubs.filter(p => p.seccion === sec); if (!l.length) return '';
@@ -233,6 +234,46 @@ function vPublicado() {
         <div class="t">${esc(p.titulo)}</div><div class="small muted">${esc(fmtRango(p.fechaInicio, p.fechaFin))} ${vigente(p) ? '· <b style="color:var(--ok)">vigente</b>' : ''}${esPdf(p) ? ' · PDF' : ''}</div></div>
       <button class="x" title="Eliminar" aria-label="Eliminar" onclick="borrarPub('${esc(p.id)}')">✕</button></div>`).join('')}</div>`;
   }).join('')}`;
+}
+/* Editar las asignaciones de una semana del programa de entre semana */
+function editarPrograma(id) {
+  const x = (DATA.programas || []).find(p => p.id === id); if (!x) return;
+  const p = JSON.parse(JSON.stringify(x));
+  const d = document.createElement('div');
+  d.className = 'modal';
+  const campo = (lbl, val, attrs) => `<label class="f" style="margin-bottom:8px"><span>${lbl}</span><input type="text" list="dlNomP" value="${esc(val || '')}" ${attrs}></label>`;
+  let html = campo('Presidente', p.presidente, 'data-k="pres"');
+  p.items.forEach((it, i) => {
+    if (it.t === 'seccion') html += `<div class="pg-sec" style="background:${it.color};border-radius:8px;margin:12px 0 8px">${esc(it.nombre)}</div>`;
+    if (it.t === 'cancion' && it.oracion !== undefined && it.oracion !== '') html += campo(`Oración (${esc(it.texto.split(':')[0])})`, it.oracion, `data-i="${i}" data-k="oracion"`);
+    if (it.t === 'parte') {
+      const n = Math.max(1, it.personas.length);
+      for (let j = 0; j < n; j++) html += campo(`${it.num}. ${esc(it.titulo)}${n > 1 ? (j ? ' — ayudante / lector' : ' — principal') : ''}`, it.personas[j], `data-i="${i}" data-j="${j}"`);
+    }
+  });
+  const nombres = nombresConocidos();
+  d.innerHTML = `<form class="modal-box modal-ancho" style="padding:16px">
+    <h3 style="font-size:1.05rem;margin-bottom:4px">Editar semana del ${esc(fmtFecha(p.fecha, { weekday: 'long', day: 'numeric', month: 'long' }))}</h3>
+    <p class="small muted" style="margin:0 0 12px">${esc(p.lectura)}. Al guardar se actualizan las asignaciones y los recordatorios de esa semana.</p>
+    ${html}<datalist id="dlNomP">${nombres.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <div class="row" style="justify-content:flex-end;position:sticky;bottom:0;background:#fff;padding-top:10px"><button type="button" class="btn" data-x>Cancelar</button><button class="btn btn-primary">Guardar cambios</button></div></form>`;
+  d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-x]')) d.remove(); });
+  $('form', d).onsubmit = async e => {
+    e.preventDefault();
+    $$('input', d).forEach(inp => {
+      const v = inp.value.trim();
+      if (inp.dataset.k === 'pres') p.presidente = v;
+      else if (inp.dataset.k === 'oracion') p.items[+inp.dataset.i].oracion = v;
+      else if (inp.dataset.j !== undefined) { const it = p.items[+inp.dataset.i]; it.personas[+inp.dataset.j] = v; }
+    });
+    p.items.forEach(it => { if (it.t === 'parte') it.personas = it.personas.filter(Boolean); });
+    const b = $('.btn-primary', d); b.disabled = true; b.textContent = 'Guardando…';
+    try {
+      await post('guardarProgramas', { programas: [{ fecha: p.fecha, inicio: p.inicio, fin: p.fin, lectura: p.lectura, presidente: p.presidente, items: p.items }], conAsignaciones: true, asignaciones: Programa.asignaciones(p) });
+      ASIG = null; HIST = null; await recargarData(); d.remove(); toast('Semana actualizada', 'ok'); render();
+    } catch (err) { toast(err.message, 'err'); b.disabled = false; b.textContent = 'Guardar cambios'; }
+  };
+  document.body.appendChild(d);
 }
 async function borrarPrograma(id) {
   if (!await confirmar('¿Eliminar esta semana del programa? También se borran las asignaciones que se crearon con ella.')) return;
@@ -591,7 +632,9 @@ function pintarEditor() {
 function aplicarFilas(filas, origen, columnas, aviso = '') {
   if (!filas.length) return toast(`No se encontraron fechas con nombres en ${origen}`, 'err');
   const max = Math.max(...filas.map(f => f.valores.length));
-  if (columnas && columnas.length >= max && columnas.every(Boolean)) ED.columnas = [...columnas];
+  const def = (Tablas.CONFIG[ED.seccion] || {}).columnas || [];
+  if (columnas && columnas.length >= max && columnas.slice(0, max).every(Boolean)) ED.columnas = columnas.slice(0, max);
+  else if (def.length === max) ED.columnas = [...def];
   while (ED.columnas.length < max) ED.columnas.push('Columna ' + (ED.columnas.length + 1));
   ED.filas = filas.map(f => ({ fecha: f.fecha, valores: ED.columnas.map((c, i) => f.valores[i] || ''), revisar: f.revisar }));
   const dudosas = filas.filter(f => f.revisar).map(f => fmtFecha(f.fecha, { weekday: 'long', day: 'numeric', month: 'long' }));
@@ -608,10 +651,10 @@ function distancia(a, b) {
   for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
   return d[m][n];
 }
-function corregirNombres(filas) {
+function corregirNombres(filas, soloCols = null) {
   const conocidos = nombresConocidos();
   let n = 0;
-  filas.forEach(f => { f.valores = f.valores.map(v => String(v || '').split('/').map(x => {
+  filas.forEach(f => { f.valores = f.valores.map((v, ci) => soloCols && !soloCols.includes(ci) ? v : String(v || '').split('/').map(x => {
     x = x.trim(); const nx = norm(x);
     if (!nx || conocidos.some(k => norm(k) === nx)) return x;
     let mejor = null, dm = 99;
@@ -621,10 +664,23 @@ function corregirNombres(filas) {
   }).join(' / ')); });
   return n;
 }
+async function leerDiscursosArchivo(f, anio, estado) {
+  let filas = [], deImagen = true;
+  if (!Lector.esImagen(f) && /pdf/i.test(f.type || f.name)) {
+    estado('Leyendo el PDF…');
+    const lineas = await Programa.leerLineas(await f.arrayBuffer());
+    if (lineas.length) { filas = Tablas.leerDiscursos(lineas.join('\n').replace(/\t/g, '    '), anio); deImagen = false; }
+    if (!filas.length) for (const cv of await Lector.pdfACanvas(f)) filas.push(...await Lector.leerDiscursosImagen(cv, anio, estado));
+  } else filas = await Lector.leerDiscursosImagen(f, anio, estado);
+  const corr = deImagen ? corregirNombres(filas, [2, 3]) : 0;
+  ED.columnas = [...Tablas.CONFIG.discursos.columnas];
+  aplicarFilas(filas, 'el archivo', ED.columnas, deImagen ? `Se leyó de una imagen: revise cada casilla${corr ? ` (se corrigieron ${corr} nombres con los que la app ya conoce)` : ''}. Si falta un dato, escríbalo.` : '');
+}
 async function leerPdfTabla(e) {
   const f = e.target.files[0]; if (!f) return;
   const anio = +ED.mes.slice(0, 4), estado = t => { $('#edEstado').textContent = t; };
   try {
+    if (ED.seccion === 'discursos' && !Lector.esExcel(f)) { await leerDiscursosArchivo(f, anio, estado); e.target.value = ''; return; }
     if (Lector.esExcel(f)) {
       estado('Leyendo el Excel…');
       const r = Tablas.leerCeldas(await Lector.leerExcel(f), anio);
