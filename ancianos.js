@@ -747,6 +747,7 @@ async function guardarTabla() {
   if (cols.some(c => !c)) return toast('Ponga nombre a todas las columnas', 'err');
   const filas = ED.filas.filter(f => f.fecha);
   if (!filas.length) return toast('Agregue al menos una fecha', 'err');
+  if (!filas.some(f => f.valores.some(v => String(v || '').trim()))) return toast('La tabla está vacía: escriba los nombres o use Leer archivo', 'err');
   const porMes = {};
   filas.forEach(f => (porMes[f.fecha.slice(0, 7)] ||= []).push(f));
   const tablas = Object.keys(porMes).sort().map(mes => ({ seccion: ED.seccion, mes, columnas: cols, filas: porMes[mes], sinAsignar: Tablas.sinAsignar(ED.seccion, cols) }));

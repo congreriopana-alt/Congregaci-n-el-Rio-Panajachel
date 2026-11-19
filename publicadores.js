@@ -161,7 +161,6 @@ function vInicio() {
   const nombres = [...new Set([...(DATA.hermanos || []), ...DATA.asignaciones.map(a => a.hermano)])].sort();
   const mias = nombre ? DATA.asignaciones.filter(a => a.fecha >= h && norm(a.hermano).includes(norm(nombre))) : [];
   const eventos = DATA.anuncios.filter(a => a.fecha && (a.fechaFin || a.fecha) >= h).slice(0, 3);
-  const recientes = DATA.publicaciones.slice(0, 4);
   const estaSemana = DATA.asignaciones.filter(a => a.fecha >= s.inicio && a.fecha <= s.fin).length;
 
   let mis = '';
@@ -176,12 +175,8 @@ function vInicio() {
   return `
   ${avisoReunionHoy()}
   ${tarjetasHoy()}
-  ${(() => { const pg = programaDeEstaSemana(); const dpg = pg ? parseYmd(pg.fecha) : null;
-    return `<div class="hero" ${pg ? `role="button" tabindex="0" style="cursor:pointer" onclick="sub.reuniones='entresemana';semIdx=null;irA('reuniones')"` : ''}><div class="k">Esta semana</div><div class="v">${esc(fmtRango(s.inicio, s.fin))}</div>
-    <div class="small" style="color:#d6deea;margin-top:4px">${pg ? `Reunión del ${DIAS[dpg.getDay()]} ${dpg.getDate()}: ${esc(pg.lectura)}${pg.presidente ? ' · Presidente ' + esc(pg.presidente) : ''} · <u>ver programa</u>`
-      : estaSemana ? `${estaSemana} asignaciones registradas` : 'Consulte los programas en Reuniones y Asignaciones'}</div>
-    ${(() => { const dc = discursoDeEstaSemana(); if (!dc) return ''; const dd = parseYmd(dc.fecha);
-      return `<div class="small" style="color:#d6deea;margin-top:4px;cursor:pointer" onclick="event.stopPropagation();sub.reuniones='discursos';irA('reuniones')">Discurso del ${DIAS[dd.getDay()]} ${dd.getDate()}: ${esc(dc.tema || 'ver programa')}${dc.orador ? ' · ' + esc(dc.orador) : ''} · <u>ver</u></div>`; })()}</div>`; })()}
+  <div class="hero hero-compacto"><div class="k">Esta semana</div><div class="v">${esc(fmtRango(s.inicio, s.fin))}</div></div>
+  ${tarjetasReuniones()}
 
   ${esIOS && !esInstalada && !store.get('ios_ok') ? `<div class="card flat small">Para instalar en iPhone: toque <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. <button class="btn btn-sm" style="margin-left:6px" onclick="store.set('ios_ok',1);render()">Entendido</button></div>` : ''}
 
@@ -195,8 +190,48 @@ function vInicio() {
   ${eventos.length ? `<div class="h-sec">Próximos eventos <button onclick="irA('anuncios')">Ver todos</button></div>
     ${eventos.map(tarjetaEvento).join('')}` : ''}
 
-  <div class="h-sec">Publicado recientemente</div>
-  ${recientes.length ? recientes.map(p => tarjetaPub(p, true)).join('') : '<div class="empty">Aún no hay programas publicados.</div>'}`;
+  ${novedades()}`;
+}
+
+/* Las dos reuniones de la semana, cada una en su tarjeta */
+function tarjetasReuniones() {
+  const pg = programaDeEstaSemana(), dc = discursoDeEstaSemana();
+  let html = '';
+  if (pg) {
+    const d = parseYmd(pg.fecha);
+    html += `<button class="reu-card" onclick="sub.reuniones='entresemana';semIdx=null;irA('reuniones')">
+      <div class="reu-k">Reunión de entre semana · <span class="cap-in">${esc(DIAS[d.getDay()])} ${d.getDate()}</span>${pg.fecha === hoy() ? ' <em>Hoy</em>' : ''}</div>
+      <div class="reu-t">${esc(pg.lectura)}</div>
+      ${pg.presidente ? `<div class="reu-d">Presidente: <b>${esc(pg.presidente)}</b></div>` : ''}
+      <div class="reu-ver">Ver programa ›</div></button>`;
+  }
+  if (dc && (dc.tema || dc.orador)) {
+    const d = parseYmd(dc.fecha);
+    html += `<button class="reu-card reu-disc" onclick="sub.reuniones='discursos';irA('reuniones')">
+      <div class="reu-k">Discurso público · <span class="cap-in">${esc(DIAS[d.getDay()])} ${d.getDate()}</span>${dc.fecha === hoy() ? ' <em>Hoy</em>' : ''}</div>
+      <div class="reu-t">${esc(dc.tema || 'Discurso público')}</div>
+      ${dc.orador ? `<div class="reu-d">Orador: <b>${esc(dc.orador)}</b></div>` : ''}
+      ${dc.presidente || dc.lector ? `<div class="reu-d">${dc.presidente ? `Presidente: <b>${esc(dc.presidente)}</b>` : ''}${dc.presidente && dc.lector ? ' · ' : ''}${dc.lector ? `Lector: <b>${esc(dc.lector)}</b>` : ''}</div>` : ''}
+      <div class="reu-ver">Ver discursos ›</div></button>`;
+  }
+  return html ? `<div class="reu-grid">${html}</div>` : '';
+}
+
+/* Novedades: lo último que publicaron los ancianos (se oculta si no hay nada en 14 días) */
+function novedades() {
+  const desde = new Date(Date.now() - 14 * 864e5).toISOString(), items = [];
+  const grupos = {};
+  (DATA.programas || []).filter(p => (p.creado || '') > desde).forEach(p => { (grupos[p.creado] ||= []).push(p); });
+  Object.entries(grupos).forEach(([c, ps]) => items.push({ c, t: `Programa de entre semana: ${ps.length} semana${ps.length === 1 ? '' : 's'}`, d: fmtRango(ps[0].inicio, ps[ps.length - 1].fin), ir: "sub.reuniones='entresemana';semIdx=null;irA('reuniones')", color: '#3d6b75' }));
+  (DATA.tablas || []).filter(t => (t.creado || '') > desde).forEach(t => items.push({ c: t.creado, t: SECCIONES[t.seccion].nombre, d: Tablas.nombreMes(t.mes),
+    ir: t.seccion === 'discursos' ? "sub.reuniones='discursos';irA('reuniones')" : `sub.asignaciones='${t.seccion}';store.set('sub_asignaciones','${t.seccion}');irA('asignaciones')`, color: SECCIONES[t.seccion].color }));
+  DATA.anuncios.filter(a => (a.creado || '') > desde).forEach(a => items.push({ c: a.creado, t: a.titulo, d: a.fecha ? fechaEvento(a) : 'Anuncio', ir: "irA('anuncios')", color: '#c9a227' }));
+  DATA.publicaciones.filter(p => (p.creado || '') > desde).forEach(p => items.push({ c: p.creado, t: p.titulo, d: SECCIONES[p.seccion]?.nombre || '', ir: `verPub('${esc(p.id)}')`, color: SECCIONES[p.seccion]?.color || '#888' }));
+  (DATA.salidas || []).filter(x => (x.creado || '') > desde).forEach(x => items.push({ c: x.creado, t: tituloSalida(x), d: x.repetir === 'semanal' ? textoRepetir(x) : fmtFecha(x.fecha), ir: "irA('territorios')", color: '#1f8f4e' }));
+  if (!items.length) return '';
+  items.sort((a, b) => b.c.localeCompare(a.c));
+  return `<div class="h-sec">Novedades</div><div class="lista">${items.slice(0, 5).map(i => `<button class="item nov" onclick="${i.ir}">
+    <i class="nov-dot" style="background:${i.color}"></i><div class="grow"><div class="t">${esc(i.t)}</div><div class="small muted">${esc(i.d)} · publicado ${esc(haceCuanto(i.c))}</div></div><span class="muted">›</span></button>`).join('')}</div>`;
 }
 
 function vistaSeccion(seccion) {
@@ -221,7 +256,7 @@ function discursoDeEstaSemana() {
   const s = semana();
   for (const t of (DATA.tablas || []).filter(t => t.seccion === 'discursos')) {
     const f = t.filas.find(f => f.fecha >= s.inicio && f.fecha <= s.fin);
-    if (f) { const v = c => { const i = t.columnas.findIndex(x => norm(x) === c); return i >= 0 ? f.valores[i] : ''; }; return { fecha: f.fecha, tema: v('discurso'), orador: v('orador') }; }
+    if (f) { const v = c => { const i = t.columnas.findIndex(x => norm(x) === c); return i >= 0 ? f.valores[i] : ''; }; return { fecha: f.fecha, tema: v('discurso'), orador: v('orador'), presidente: v('presidente'), lector: v('lector') }; }
   }
   return null;
 }

@@ -350,3 +350,21 @@ details.archivos { margin: 6px 0 14px; }
 details.archivos > summary { cursor: pointer; color: var(--navy-2); font-weight: 650; font-size: .9rem; padding: 10px 4px; list-style: none; }
 details.archivos > summary::before { content: '▸ '; }
 details.archivos[open] > summary::before { content: '▾ '; }
+/* Inicio: semana y las dos reuniones */
+.hero-compacto { padding: 14px 18px; }
+.hero-compacto .v { font-size: 1.2rem; }
+.reu-grid { display: grid; gap: 10px; margin-bottom: 12px; }
+@media (min-width: 640px) { .reu-grid { grid-template-columns: 1fr 1fr; } }
+.reu-card { display: block; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-left: 5px solid #3d6b75; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; cursor: pointer; font: inherit; color: inherit; }
+.reu-card.reu-disc { border-left-color: #1f3a6b; }
+.reu-k { font-size: .76rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #3d6b75; }
+.reu-disc .reu-k { color: #1f3a6b; }
+.reu-k em { font-style: normal; background: #2f8a4f; color: #fff; border-radius: 999px; padding: 1px 8px; margin-left: 4px; font-size: .68rem; }
+.cap-in { text-transform: none; }
+.reu-t { font-size: 1.08rem; font-weight: 750; margin: 6px 0 4px; line-height: 1.3; }
+.reu-d { font-size: .88rem; color: var(--muted); margin-top: 2px; }
+.reu-d b { color: var(--ink); font-weight: 650; }
+.reu-ver { margin-top: 8px; font-size: .86rem; font-weight: 650; color: var(--navy-2); }
+.item.nov { width: 100%; border: 0; border-top: 1px solid var(--line); background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.lista .item.nov:first-child { border-top: 0; }
+.nov-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; }
