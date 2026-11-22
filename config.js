@@ -22,4 +22,19 @@ window.APP_CONFIG = {
     ['Luis Yax', '+502 5833 2462'],
     ['Luis Garcia', '+502 5588 5445'],
   ],
+
+  // Informe de predicación por grupos: la app busca el grupo del hermano por su nombre
+  // y abre directamente la página de su grupo, con su nombre ya elegido.
+  // Si alguien cambia de grupo, muévalo aquí (los nombres van como en la página: "Apellido, Nombre").
+  INFORMES: {
+    base: 'https://congreriopana-alt.github.io/informes-congregaci-n/',
+    grupos: {
+      1: ["Caná, Gabriel", "Caná, Mercedes de", "Caro, Lucía de", "Caro, Saúl", "Cosme Yach, Susana", "Mucun, Francisco", "Mucun, Heidy de", "Mucun, Gladys", "Ordóñez, Adela de", "Queché Mejía, Lilian", "Queché Mejía, Matheo", "Ramos Buch, Joselin", "Ruíz, Erick", "Ruiz, Kathy de", "Shovin, Gerwer", "Shovin, Maria de", "Green, William"],
+      2: ["Belisle, Marcel", "Cabrera, Edwin Armando", "Cabrera, Mariela", "Cabrera, Martina de", "Cabrera, Omar", "Cabrera, Osiel", "Cabrera, Raquel", "Choguaj, Eduardo", "Cosme Recinos, Bivia", "Orozco, Joselyn", "Palencia Cabrera, Erick", "Palencia Cabrera, Natalie", "Palencia de Cabrera, Olga", "Ruíz, Rudy"],
+      3: ["Alvarado Mejía, Franklyn", "Atzij, Ericka", "Chuc, Benjamin", "Chuc, Evelyn de", "Chuc, Francisco", "Chuc, Jazmin", "Gabriel, Nayeli", "Gabriel, Viviana", "García, Dacia", "Giron, Alicia", "Gómez, Florencio", "Gómez, Pamela", "Guzman, Erika de"],
+      4: ["Ajpuac Díaz, Jack", "Cácerez, María", "Cácerez, Thaiz", "Cácerez, Enrique", "Cácerez, Zucely de", "Caná, Monica Fabiola", "Caná, Pablo", "Chuc, Marcos", "López, Sandra de", "Morales, Antonieta", "Sulugui, Agustin", "Yax, Elsa de", "Yax, Roberto", "Yax, Sucely"],
+      5: ["Cobar, Edgar", "Flores, Karla Tatiana", "Flores, Nelson", "García, Ernesto", "García, Nancy de", "Hill, Deborah", "Mucún, Dilma de", "Mucún, Glendy Raquel", "Mucún, Hugo", "Mucún, Lesly Sofía", "Mucún, Lidia de", "Ovando, Daniella", "Pineda, Enoe", "Queché Can, Alexander", "Queché Can, Belén", "Queché Can, Carmen"],
+      6: ["Can Claudia de", "Can Sahón, Mario", "Can, Cristian", "Gil Rios, Silvia Kristel", "Gil Salazár, Yohnathan", "Gómez Cabrera, Belén", "Gómez Cabrera, Randy", "Gómez, Elida de", "Gómez, Melany de", "Raxtun Rosales, Lucrecia", "Ríos, Elizabeth", "Rosales, Esly de", "Rosales, Mauricio", "Sicay, William", "Velázquez, Abelina", "Yax, Luis", "Yax, Mariela de"]
+    },
+  },
 };
