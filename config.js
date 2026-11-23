@@ -37,4 +37,12 @@ window.APP_CONFIG = {
       6: ["Can Claudia de", "Can Sahón, Mario", "Can, Cristian", "Gil Rios, Silvia Kristel", "Gil Salazár, Yohnathan", "Gómez Cabrera, Belén", "Gómez Cabrera, Randy", "Gómez, Elida de", "Gómez, Melany de", "Raxtun Rosales, Lucrecia", "Ríos, Elizabeth", "Rosales, Esly de", "Rosales, Mauricio", "Sicay, William", "Velázquez, Abelina", "Yax, Luis", "Yax, Mariela de"]
     },
   },
+
+  // Asistencia de la reunión: solo la ven los hermanos que están en los programas de
+  // audio y video y de acomodadores (y los nombres que se agreguen en "extra").
+  ASISTENCIA: {
+    url: 'https://congreriopana-alt.github.io/Asistencia-/',
+    estadisticas: 'https://congreriopana-alt.github.io/Asistencia-/dashboard_el_rio.html',
+    extra: [],   // por ejemplo: ['Erick Ruiz', 'Nelson Flores']
+  },
 };
