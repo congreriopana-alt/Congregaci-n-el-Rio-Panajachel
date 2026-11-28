@@ -24,7 +24,10 @@ window.APP_CONFIG = {
   // Asistencia de la reunión: solo la ven los hermanos que están en los programas de
   // audio y video y de acomodadores (y los nombres que se agreguen en "extra").
   // Resultados de la encuesta de cambio de horario de las reuniones (se ven en el panel de ancianos)
-  ENCUESTA_HORARIO: 'https://congreriopana-alt.github.io/cambio-de-horario-de-reuniones/',
+  ENCUESTA_HORARIO: {
+    datos: 'https://script.google.com/macros/s/AKfycbxzJY-DWVcMRQLRG1DcUtHl66mNRvz9dn_1P7WeVBRvf31FngK39Efgrqfm5HDRLvp3/exec',
+    pagina: 'https://congreriopana-alt.github.io/cambio-de-horario-de-reuniones/',
+  },
 
   ASISTENCIA: {
     url: 'https://congreriopana-alt.github.io/Asistencia-/',
