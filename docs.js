@@ -145,7 +145,7 @@ const Docs = (() => {
   function htmlCartas(d, opciones = {}) {
     const items = opciones.todos ? d.items : d.items.filter(x => x.incluir !== false);
     return `<div class="carta">
-      <div class="carta-cab"><span class="carta-ico">✉️</span><div><div class="carta-t">${esc(d.titulo || 'Anuncios y recordatorios')}</div>${d.mes ? `<div class="carta-m cap">${esc(d.mes)}</div>` : ''}</div></div>
+      <div class="carta-cab"><span class="carta-ico">${IC.correo}</span><div><div class="carta-t">${esc(d.titulo || 'Anuncios y recordatorios')}</div>${d.mes ? `<div class="carta-m cap">${esc(d.mes)}</div>` : ''}</div></div>
       ${items.map((x, i) => `<details class="carta-item" ${i === 0 && !opciones.todos ? 'open' : ''}>
         <summary>${opciones.todos ? `<input type="checkbox" data-i="${d.items.indexOf(x)}" ${x.incluir !== false ? 'checked' : ''} onclick="event.stopPropagation()">` : ''}${x.num ? `<span class="carta-n">${x.num}</span>` : ''}<span class="carta-it">${esc(x.titulo)}</span></summary>
         ${x.condicion ? `<div class="carta-cond">${esc(x.condicion)}</div>` : ''}
@@ -159,7 +159,7 @@ const Docs = (() => {
     const filas = (l) => (l || []).map(x => `<div class="cu-fila"><span>${esc(x.concepto)}</span><b>${dinero(x.monto, mon)}</b></div>`).join('');
     const def = d.resultado && d.resultado.tipo === 'Déficit';
     return `<div class="cuentas">
-      <div class="carta-cab"><span class="carta-ico">📊</span><div><div class="carta-t">Informe de las cuentas</div>${d.mes ? `<div class="carta-m">${esc(d.mes)}</div>` : ''}</div></div>
+      <div class="carta-cab"><span class="carta-ico">${IC.grafica}</span><div><div class="carta-t">Informe de las cuentas</div>${d.mes ? `<div class="carta-m">${esc(d.mes)}</div>` : ''}</div></div>
       <div class="cu-res">
         <div><small>Donaciones recibidas</small><b>${dinero(d.recibido, mon)}</b></div>
         <div><small>Gastos de la congregación</small><b>${dinero(d.totalGastos, mon)}</b></div>
